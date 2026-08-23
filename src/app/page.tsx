@@ -15,6 +15,7 @@ import { ScoreCard } from "./score-card";
 import { Remembered } from "./remembered";
 import { DaySummary } from "./day-summary";
 import { Tabs } from "./tabs";
+import { InstallHint } from "./install-hint";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,9 @@ export default async function TodayPage() {
 
       {/* Always visible: hiding today's total behind a tab would defeat the app. */}
       <DaySummary score={day.score} targets={targets} />
+
+      {/* Hides itself once installed, or once dismissed. */}
+      <InstallHint />
 
       <Tabs
         initial={day.entries.length === 0 ? "log" : "meals"}
