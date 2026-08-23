@@ -119,7 +119,9 @@ function ItemRow({ item }: { item: DayItemView }) {
           onClick={() => (expanded ? dismiss() : setExpanded(true))}
           // min-h-9 makes the whole row a comfortable tap target rather than a
           // 12px line of text.
-          className="min-h-9 min-w-0 flex-1 truncate text-left hover:text-foreground"
+          // Wraps to two lines rather than truncating: barcode product names are long,
+          // and an unreadable name defeats the point of a confirmation step.
+          className="min-h-9 min-w-0 flex-1 text-left [overflow-wrap:anywhere] hover:text-foreground"
           aria-expanded={expanded}
         >
           <span className={expanded ? "text-foreground" : "text-muted"}>

@@ -288,7 +288,7 @@ export function EntryBox({
               {suggestions.map((m) => (
                 <li key={m.entryId} className="flex items-center gap-2 px-2.5 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs">{m.rawText}</p>
+                    <p className="line-clamp-2 text-xs [overflow-wrap:anywhere]">{m.rawText}</p>
                     <p className="tnum text-[11px] text-muted">
                       {m.kcal} cal
                       {m.timesLogged > 1 && ` · logged ${m.timesLogged}×`}
@@ -399,10 +399,12 @@ export function EntryBox({
               const badge = SOURCE_BADGE[item.nutritionSource] ?? SOURCE_BADGE.estimate;
               return (
                 <li key={index} className="py-2.5">
-                  <div className="flex items-baseline gap-2">
-                    <span className="min-w-0 flex-1 text-sm">
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
                       {item.name}
-                      {item.brand && <span className="text-muted"> · {item.brand}</span>}
+                      {item.brand && (
+                        <span className="block text-xs text-muted">{item.brand}</span>
+                      )}
                     </span>
                     <span
                       className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}

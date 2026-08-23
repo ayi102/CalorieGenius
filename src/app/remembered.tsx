@@ -75,7 +75,7 @@ export function Remembered({
           {meals.map((m) => (
             <li key={m.entryId} className="flex items-center gap-3 py-2.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm">{m.rawText}</p>
+                <p className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{m.rawText}</p>
                 <p className="tnum mt-0.5 text-xs text-muted">
                   {m.kcal} cal · {m.protein} g protein · {m.itemCount}{" "}
                   {m.itemCount === 1 ? "item" : "items"}
@@ -109,7 +109,7 @@ export function Remembered({
                 }
                 className="flex min-h-10 items-center gap-2 rounded-full border border-border px-3 text-xs hover:border-accent disabled:opacity-50"
               >
-                <span className="max-w-40 truncate">{f.displayName}</span>
+                <span className="max-w-52 truncate sm:max-w-64">{f.displayName}</span>
                 <span className="tnum text-muted">{f.kcalForDefault}</span>
                 {busy === f.id && <span className="text-muted">…</span>}
               </button>

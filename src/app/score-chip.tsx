@@ -37,7 +37,7 @@ export function MealScoreChip({ score }: { score: MealScore | null }) {
         >
           {score.total}
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs text-muted">
+        <span className="min-w-0 flex-1 text-xs text-muted">
           {score.headline}
         </span>
         <span
