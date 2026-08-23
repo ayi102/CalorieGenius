@@ -178,14 +178,12 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
   const anyEstimate = items.some((i) => i.nutritionSource === "estimate");
   const anyUnavailable = items.some((i) => i.lookupUnavailable);
 
-  if (scanning) {
-    return (
-      <BarcodeScanner onDetected={onScanned} onClose={() => setScanning(false)} />
-    );
-  }
-
   return (
     <section className="rounded-lg border border-border bg-surface p-4">
+      {scanning && (
+        <BarcodeScanner onDetected={onScanned} onClose={() => setScanning(false)} />
+      )}
+
       {!preview ? (
         <form action={onAnalyze} className="flex flex-col gap-3">
           <label htmlFor="rawText" className="text-sm font-medium">
