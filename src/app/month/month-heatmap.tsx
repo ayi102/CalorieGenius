@@ -46,7 +46,7 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
   const leading = Array.from({ length: firstDow }, (_, i) => `pad-${i}`);
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
+    <div className="card p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold">Daily scores</h2>
         {/* Legend: always present, and the scale is ordered so the ramp reads. */}
@@ -81,7 +81,7 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
               ? day.isFuture
                 ? `${day.date}: upcoming`
                 : `${day.date}: nothing logged`
-              : `${day.date}: score ${day.score}, ${day.kcal} kcal, ${day.mealCount} meals`;
+              : `${day.date}: score ${day.score}, ${day.kcal} cal, ${day.mealCount} meals`;
 
           // A future day is blank; a past untracked day gets the empty tone —
           // visibly different from a low score, which is the point.
@@ -160,7 +160,7 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
                 })}
               </span>
               <span className="tnum text-muted">
-                {" — "}score {hovered.score} · {hovered.kcal} kcal ·{" "}
+                {" — "}score {hovered.score} · {hovered.kcal} cal ·{" "}
                 {hovered.protein} g protein · {hovered.mealCount}{" "}
                 {hovered.mealCount === 1 ? "meal" : "meals"}
               </span>

@@ -241,7 +241,7 @@ export function EntryBox({
   const anyUnavailable = items.some((i) => i.lookupUnavailable);
 
   return (
-    <section className="rounded-lg border border-border bg-surface p-4">
+    <section className="card p-4">
       {scanning && (
         <BarcodeScanner
           onDetected={onScanned}
@@ -290,7 +290,7 @@ export function EntryBox({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-xs">{m.rawText}</p>
                     <p className="tnum text-[11px] text-muted">
-                      {m.kcal} kcal
+                      {m.kcal} cal
                       {m.timesLogged > 1 && ` · logged ${m.timesLogged}×`}
                     </p>
                   </div>
@@ -384,7 +384,7 @@ export function EntryBox({
               )}
             </h2>
             <div className="tnum text-sm text-muted">
-              {Math.round(totals.kcal)} kcal · {Math.round(totals.protein)} g protein
+              {Math.round(totals.kcal)} cal · {Math.round(totals.protein)} g protein
             </div>
           </div>
 
@@ -466,7 +466,7 @@ export function EntryBox({
                       </label>
                     )}
 
-                    <span className="tnum text-sm">{Math.round(item.kcal)} kcal</span>
+                    <span className="tnum text-sm">{Math.round(item.kcal)} cal</span>
 
                     <button
                       type="button"

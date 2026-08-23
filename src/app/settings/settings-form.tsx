@@ -94,13 +94,13 @@ export function SettingsForm({
     <form action={formAction} className="flex flex-col gap-8">
       {/* --- Targets summary. Shown first because it's the reason to fill the
           rest of the form in. --- */}
-      <section className="rounded-lg border border-border bg-surface p-4">
+      <section className="card p-4">
         <h2 className="text-sm font-semibold">Your daily targets</h2>
         {targets.computed ? (
           <p className="mt-1 text-xs text-muted">
             {profile.calorieTargetOverride === null &&
             profile.proteinTargetOverride === null
-              ? `Computed from your profile: BMR ${targets.bmr} kcal, TDEE ${targets.tdee} kcal.`
+              ? `Computed from your profile: BMR ${targets.bmr} cal, TDEE ${targets.tdee} cal.`
               : "Partly overridden below."}
           </p>
         ) : (

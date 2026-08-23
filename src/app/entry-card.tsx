@@ -244,7 +244,7 @@ function ItemRow({ item }: { item: DayItemView }) {
                 {(["kcal", "protein", "carbs", "fat"] as const).map((k) => (
                   <label key={k} className="flex flex-col gap-0.5">
                     <span className="text-[10px] text-muted">
-                      {k === "kcal" ? "kcal" : `${k} g`}
+                      {k === "kcal" ? "cal" : `${k} g`}
                     </span>
                     <input
                       type="number"
@@ -302,7 +302,7 @@ export function EntryCard({ entry }: { entry: DayEntryView }) {
   const kcal = entry.items.reduce((s, i) => s + i.kcal, 0);
 
   return (
-    <li className="rounded-lg border border-border bg-surface p-3">
+    <li className="card p-3">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-sm font-medium">
           {MEAL_LABEL[entry.mealType] ?? entry.mealType}
@@ -359,7 +359,7 @@ export function EntryCard({ entry }: { entry: DayEntryView }) {
           </span>
         )}
 
-        <span className="tnum ml-auto text-sm">{Math.round(kcal)} kcal</span>
+        <span className="tnum ml-auto text-sm">{Math.round(kcal)} cal</span>
 
         <button
           type="button"

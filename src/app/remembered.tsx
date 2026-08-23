@@ -43,7 +43,7 @@ export function Remembered({
   const active = meals.length === 0 ? "foods" : foods.length === 0 ? "meals" : tab;
 
   return (
-    <section className="rounded-lg border border-border bg-surface p-4">
+    <section className="card p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold">Log it again</h2>
         {showTabs && (
@@ -77,7 +77,7 @@ export function Remembered({
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{m.rawText}</p>
                 <p className="tnum mt-0.5 text-xs text-muted">
-                  {m.kcal} kcal · {m.protein} g protein · {m.itemCount}{" "}
+                  {m.kcal} cal · {m.protein} g protein · {m.itemCount}{" "}
                   {m.itemCount === 1 ? "item" : "items"}
                   {m.timesLogged > 1 && ` · ${m.timesLogged}×`}
                   {m.restaurantName && ` · ${m.restaurantName}`}

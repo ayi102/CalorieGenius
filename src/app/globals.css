@@ -11,28 +11,38 @@
  * never raw hex. Light is defined on bare :root; dark redefines the same names.
  */
 :root {
-  /* Paper */
-  --background: #f7f6f3;
+  /* Paper — lighter than a mid-tone canvas, so cards read as raised sheets. */
+  --background: #fcfbf9;
   --surface: #ffffff;
-  --surface-raised: #f0eee9;
-  --surface-sunken: #eae7e0;
+  --surface-raised: #f6f4f1;
+  --surface-sunken: #f0ede8;
 
   /* Ink */
-  --foreground: #1c1b18;
-  --muted: #7a756c;
-  --border: #e3e0d9;
-  --border-strong: #d2cec5;
+  --foreground: #1a1917;
+  --muted: #8b867c;
+  --border: #edeae5;
+  --border-strong: #ddd8d1;
 
-  /* Accent — muted sage. Low chroma so it reads as considered, not branded. */
-  --accent: #55614f;
-  --accent-hover: #445039;
+  /*
+   * Accent — warm near-black, not a colour.
+   *
+   * The most neutral choice available: it lets the numbers and the one data hue
+   * carry all the colour in the interface, which is what stops a screen full of
+   * figures feeling busy. Sage is reserved for the heatmap.
+   */
+  --accent: #2e2d28;
+  --accent-hover: #45433c;
   --accent-fg: #ffffff;
-  --accent-soft: #eceee8;
+  --accent-soft: #f3f1ed;
 
   /* Feedback. Desaturated to sit inside the neutral scheme. */
   --positive: #4a6b52;
   --warning: #8a6a33;
   --negative: #9c4a3f;
+
+  /* Elevation. One soft, tight shadow — not a drop shadow. */
+  --shadow-card: 0 1px 2px rgba(26, 25, 23, 0.04), 0 1px 1px rgba(26, 25, 23, 0.03);
+  --shadow-raised: 0 4px 16px -4px rgba(26, 25, 23, 0.10), 0 1px 2px rgba(26, 25, 23, 0.04);
 
   /* Score bands, for chips where the number is always shown alongside —
    * status colour never carries meaning on its own here. */
@@ -56,20 +66,24 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #141412;
-    --surface: #1c1c1a;
-    --surface-raised: #262623;
-    --surface-sunken: #101010;
+    --background: #171716;
+    --surface: #1f1f1d;
+    --surface-raised: #292927;
+    --surface-sunken: #121211;
 
-    --foreground: #ebe9e4;
-    --muted: #9a958b;
-    --border: #302f2c;
-    --border-strong: #423f3a;
+    --foreground: #f0eee9;
+    --muted: #a09b91;
+    --border: #333230;
+    --border-strong: #454340;
 
-    --accent: #9aa88f;
-    --accent-hover: #aebaa3;
-    --accent-fg: #16170f;
-    --accent-soft: #24261f;
+    /* Dark mode inverts the idea: a near-white accent on near-black. */
+    --accent: #f0eee9;
+    --accent-hover: #ffffff;
+    --accent-fg: #1a1917;
+    --accent-soft: #2b2a27;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-raised: 0 6px 20px -6px rgba(0, 0, 0, 0.6);
 
     --positive: #86a88c;
     --warning: #c39a52;
@@ -126,8 +140,19 @@
   --color-heat-5: var(--heat-5);
   --color-heat-empty: var(--heat-empty);
 
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /*
+   * Display face for headings and hero numbers.
+   *
+   * A system serif stack rather than a webfont: it costs no network request and
+   * has no loading flash — which matters most on the phone this is used from.
+   * ui-serif resolves to New York on Apple platforms and Georgia elsewhere.
+   */
+  --font-display: ui-serif, "New York", Georgia, "Times New Roman", serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
     Monaco, Consolas, monospace;
 }
@@ -146,6 +171,22 @@ body {
 /* Figures line up in tables and stat rows without hand-tuning. */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* Headings and hero figures. Slight negative tracking stops a large serif from
+ * looking loose at display sizes. */
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  font-weight: 400;
+}
+
+/* The standard card. Defined once so every panel matches. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  box-shadow: var(--shadow-card);
 }
 
 /*

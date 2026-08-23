@@ -43,7 +43,7 @@ export default async function DayPage({ params }: PageProps<"/day/[date]">) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-xl font-semibold">{label}</h1>
+          <h1 className="display text-2xl">{label}</h1>
           {date === today && <p className="text-sm text-muted">Today</p>}
         </div>
         <nav className="flex gap-1 text-sm">

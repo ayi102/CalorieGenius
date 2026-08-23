@@ -78,7 +78,7 @@ export function MealScoreChip({ score }: { score: MealScore | null }) {
           </ul>
 
           <p className="mt-2 border-t border-border pt-1.5 text-[11px] text-muted tnum">
-            {score.totals.kcal} kcal · {score.totals.protein} g protein ·{" "}
+            {score.totals.kcal} cal · {score.totals.protein} g protein ·{" "}
             {score.totals.carbs} g carbs · {score.totals.fat} g fat ·{" "}
             {score.totals.fiber} g fiber
           </p>

@@ -33,7 +33,7 @@ export function FoodGroupChart({
 }) {
   if (groups.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-surface p-4">
+      <div className="card p-4">
         <h2 className="text-sm font-semibold">What you ate</h2>
         <p className="mt-2 text-sm text-muted">
           No entries this month yet.
@@ -45,7 +45,7 @@ export function FoodGroupChart({
   const max = groups[0].kcal;
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
+    <div className="card p-4">
       <h2 className="text-sm font-semibold">Calories by food group</h2>
       <ul className="mt-3 flex flex-col gap-2">
         {groups.map((g) => (
@@ -67,7 +67,7 @@ export function FoodGroupChart({
               className="mt-1 block h-2.5 rounded-r bg-heat-3"
               style={{ width: `${Math.max(2, (g.kcal / max) * 100)}%` }}
               role="img"
-              aria-label={`${GROUP_LABEL[g.group]}: ${g.kcal} kcal, ${Math.round(g.share * 100)}%`}
+              aria-label={`${GROUP_LABEL[g.group]}: ${g.kcal} cal, ${Math.round(g.share * 100)}%`}
             />
           </li>
         ))}

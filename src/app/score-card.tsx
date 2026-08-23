@@ -18,7 +18,7 @@ const BAND_CLASS: Record<string, string> = {
 export function ScoreCard({ score }: { score: DayScore | null }) {
   if (!score) {
     return (
-      <div className="rounded-lg border border-border bg-surface p-4">
+      <div className="card p-4">
         <div className="text-xs text-muted">Score</div>
         <div className="mt-1 text-2xl font-semibold text-muted">—</div>
         <p className="mt-1 text-xs text-muted">
@@ -32,7 +32,7 @@ export function ScoreCard({ score }: { score: DayScore | null }) {
   const band = scoreBand(score.total);
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-4">
+    <div className="card p-4">
       <div className="flex items-center gap-3">
         <div
           className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg text-lg font-semibold tnum ${BAND_CLASS[band]}`}
