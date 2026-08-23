@@ -448,3 +448,129 @@ export async function getMonth(
     foodGroups,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Memory: what this user has eaten before
+// ---------------------------------------------------------------------------
+
+export interface RememberedMeal {
+  /** The most recent entry with this text — the one re-logging copies. */
+  entryId: string;
+  rawText: string;
+  restaurantName: string | null;
+  itemCount: number;
+  kcal: number;
+  protein: number;
+  timesLogged: number;
+  lastEatenAt: Date;
+}
+
+/**
+ * Meals this user has logged before, most-used first.
+ *
+ * This is the answer to "why should I have to build recipes?" — a meal typed
+ * once is a meal the app knows. Grouping is by the raw text the user actually
+ * typed, because that IS their name for it; asking them to name a recipe
+ * separately would be asking them to do the app's job.
+ *
+ * Ranked by frequency then recency, so staples surface above one-offs.
+ */
+export async function getRememberedMeals(
+  userId: string,
+  limit = 8,
+): Promise<RememberedMeal[]> {
+  // Group in SQL rather than pulling every entry into memory: this runs on the
+  // Today page, and a year of history is thousands of rows.
+  const groups = await prisma.$queryRaw<
+    {
+      rawText: string;
+      times: bigint;
+      lastAt: Date;
+      entryId: string;
+    }[]
+  >`
+    SELECT DISTINCT ON (lower(btrim(e."rawText")))
+      e."rawText"          AS "rawText",
+      count(*) OVER (PARTITION BY lower(btrim(e."rawText"))) AS times,
+      max(e."eatenAt") OVER (PARTITION BY lower(btrim(e."rawText"))) AS "lastAt",
+      e.id                 AS "entryId"
+    FROM "Entry" e
+    WHERE e."userId" = ${userId}
+      AND e."rawText" IS NOT NULL
+      AND btrim(e."rawText") <> ''
+    ORDER BY lower(btrim(e."rawText")), e."eatenAt" DESC
+  `;
+
+  if (groups.length === 0) return [];
+
+  // Pull the item totals for just the representative entries.
+  const rows = await prisma.entry.findMany({
+    where: { id: { in: groups.map((g) => g.entryId) } },
+    include: { items: true },
+  });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  return groups
+    .map((g) => {
+      const entry = byId.get(g.entryId);
+      if (!entry) return null;
+      return {
+        entryId: g.entryId,
+        rawText: g.rawText,
+        restaurantName: entry.restaurantName,
+        itemCount: entry.items.length,
+        kcal: Math.round(entry.items.reduce((s, i) => s + i.kcal, 0)),
+        protein: Math.round(entry.items.reduce((s, i) => s + i.protein, 0)),
+        timesLogged: Number(g.times),
+        lastEatenAt: g.lastAt,
+      };
+    })
+    .filter((m): m is RememberedMeal => m !== null)
+    .sort(
+      (a, b) =>
+        b.timesLogged - a.timesLogged ||
+        b.lastEatenAt.getTime() - a.lastEatenAt.getTime(),
+    )
+    .slice(0, limit);
+}
+
+export interface RememberedFood {
+  id: string;
+  displayName: string;
+  brand: string | null;
+  defaultGrams: number;
+  unitIsServing: boolean;
+  kcalForDefault: number;
+  timesLogged: number;
+}
+
+/**
+ * Individual foods this user reaches for, most-used first.
+ *
+ * Complements remembered meals: sometimes you want the whole lunch again, and
+ * sometimes just the yoghurt.
+ */
+export async function getRememberedFoods(
+  userId: string,
+  limit = 12,
+): Promise<RememberedFood[]> {
+  const rows = await prisma.foodItem.findMany({
+    where: {
+      OR: [{ userId }, { userId: null }],
+      timesLogged: { gt: 0 },
+    },
+    orderBy: [{ timesLogged: "desc" }, { lastLoggedAt: "desc" }],
+    take: limit,
+  });
+
+  return rows.map((f) => ({
+    id: f.id,
+    displayName: f.displayName,
+    brand: f.brand,
+    defaultGrams: f.defaultGrams,
+    // A barcode row carries a real label serving; a parsed food does not.
+    unitIsServing: f.barcode !== null,
+    kcalForDefault: Math.round((f.kcalPer100g * f.defaultGrams) / 100),
+    timesLogged: f.timesLogged,
+  }));
+}

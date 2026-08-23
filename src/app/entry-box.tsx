@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   analyzeEntry,
+  relogEntry,
   saveEntry,
   scanBarcode,
   type AnalyzeResult,
@@ -67,7 +68,14 @@ function currentServings(item: PreviewItem): number {
   return item.grams / item.servingGrams;
 }
 
-export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
+export function EntryBox({
+  parsesRemaining,
+  knownMeals = [],
+}: {
+  parsesRemaining: number;
+  /** Past meal texts, for the typeahead. Ranked by how often they were logged. */
+  knownMeals?: { entryId: string; rawText: string; kcal: number; timesLogged: number }[];
+}) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [eatenAt, setEatenAt] = useState(nowLocalInput);
@@ -77,6 +85,7 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
   const [scanning, setScanning] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const scanBtnRef = useRef<HTMLButtonElement>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [preview, setPreview] = useState<AnalyzeResult | null>(null);
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +106,41 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
     // Run on mount only; refocusing on every state change would fight the user.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Past meals matching what has been typed so far.
+   *
+   * Substring matching on every whitespace-separated token, so "chicken rice"
+   * finds "grilled chicken breast with a cup of white rice". Deliberately not
+   * fuzzy: a wrong suggestion that logs the wrong food is worse than no
+   * suggestion, and the user can always just finish typing.
+   */
+  const suggestions =
+    text.trim().length < 2
+      ? []
+      : (() => {
+          const needles = text.toLowerCase().split(/\s+/).filter((t) => t.length > 1);
+          return knownMeals
+            .filter((m) => {
+              const hay = m.rawText.toLowerCase();
+              return needles.every((n) => hay.includes(n));
+            })
+            .slice(0, 4);
+        })();
+
+  function onRelog(entryId: string) {
+    setError(null);
+    startAnalyze(async () => {
+      const r = await relogEntry(entryId, new Date(eatenAt).toISOString());
+      if (!r.ok) {
+        setError(r.error ?? "Could not add that.");
+        return;
+      }
+      setText("");
+      setShowSuggestions(false);
+      router.refresh();
+    });
+  }
 
   const totals = items.reduce(
     (acc, i) => ({
@@ -142,6 +186,7 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
       setText("");
       setPreview(null);
       setItems([]);
+      setShowSuggestions(false);
       setEatenAt(nowLocalInput());
       setRestaurant("");
       setShowRestaurant(false);
@@ -218,7 +263,10 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
             id="rawText"
             name="rawText"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setShowSuggestions(true);
+            }}
             ref={textRef}
             rows={2}
             placeholder="2 eggs, toast with butter, and a large iced coffee"
@@ -232,6 +280,32 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
               }
             }}
           />
+
+          {/* Typeahead over past meals. Re-logging one is free — it copies
+              stored nutrition instead of parsing again. */}
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="-mt-1 flex flex-col divide-y divide-border rounded-md border border-border bg-surface-raised">
+              {suggestions.map((m) => (
+                <li key={m.entryId} className="flex items-center gap-2 px-2.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs">{m.rawText}</p>
+                    <p className="tnum text-[11px] text-muted">
+                      {m.kcal} kcal
+                      {m.timesLogged > 1 && ` · logged ${m.timesLogged}×`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={analyzing}
+                    onClick={() => onRelog(m.entryId)}
+                    className="min-h-9 shrink-0 rounded-md border border-border bg-surface px-2.5 text-[11px] font-medium hover:border-accent disabled:opacity-50"
+                  >
+                    Log again — free
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
             <label className="flex flex-col gap-1">

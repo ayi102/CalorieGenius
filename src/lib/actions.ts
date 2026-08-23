@@ -918,3 +918,173 @@ export async function scanBarcode(barcode: string): Promise<BarcodeResult> {
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Re-logging from memory
+// ---------------------------------------------------------------------------
+
+/**
+ * Log a past meal again, at a new time.
+ *
+ * Copies the stored EntryItem rows verbatim — **no model call, no USDA lookup,
+ * no parse quota**. That is the point: a meal you have eaten before should be
+ * one tap and cost nothing, and it removes any reason to make the user build
+ * "recipes" by hand.
+ *
+ * Nutrition is copied rather than re-resolved so a repeat of Tuesday's lunch has
+ * Tuesday's numbers, including any correction made since.
+ */
+export async function relogEntry(
+  sourceEntryId: string,
+  eatenAtIso?: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const source = await prisma.entry.findFirst({
+    // Scoped by userId: an entry id alone must never let someone copy another
+    // person's meal into their own diary.
+    where: { id: sourceEntryId, userId: user.userId },
+    include: { items: true },
+  });
+  if (!source) return { ok: false, error: "That meal is no longer in your history." };
+  if (source.items.length === 0) return { ok: false, error: "That meal has no items." };
+
+  const eatenAt = eatenAtIso ? new Date(eatenAtIso) : new Date();
+  if (Number.isNaN(eatenAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  await prisma.entry.create({
+    data: {
+      userId: user.userId,
+      eatenAt,
+      localDate: toLocalDate(eatenAt, user.timezone),
+      // Meal type is re-derived from the NEW time, not copied: the same food at
+      // 8am is breakfast and at 8pm is dinner.
+      mealType: guessMealType(eatenAt, user.timezone),
+      source: "quickadd",
+      rawText: source.rawText,
+      restaurantName: source.restaurantName,
+      items: {
+        create: source.items.map((i) => ({
+          foodItemId: i.foodItemId,
+          name: i.name,
+          brand: i.brand,
+          quantity: i.quantity,
+          unit: i.unit,
+          grams: i.grams,
+          kcal: i.kcal,
+          protein: i.protein,
+          carbs: i.carbs,
+          fat: i.fat,
+          fiber: i.fiber,
+          sugar: i.sugar,
+          sodium: i.sodium,
+          foodGroup: i.foodGroup,
+          processedLevel: i.processedLevel,
+          nutritionSource: i.nutritionSource,
+          confidence: i.confidence,
+          usdaFdcId: i.usdaFdcId,
+        })),
+      },
+    },
+  });
+
+  // Bump the library counts so frequently re-logged foods keep rising.
+  const foodIds = source.items
+    .map((i) => i.foodItemId)
+    .filter((id): id is string => id !== null);
+  if (foodIds.length > 0) {
+    await prisma.foodItem
+      .updateMany({
+        where: { id: { in: foodIds } },
+        data: { timesLogged: { increment: 1 }, lastLoggedAt: new Date() },
+      })
+      .catch(() => {}); // a stat update must not fail the log
+  }
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/**
+ * Add a single remembered food as its own entry. Also free — it reads the stored
+ * per-100g nutrition rather than looking anything up.
+ */
+export async function quickAddFood(
+  foodItemId: string,
+  amount: number,
+  eatenAtIso?: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 50) {
+    return { ok: false, error: "Enter an amount between 0.25 and 50." };
+  }
+
+  const food = await prisma.foodItem.findFirst({
+    where: { id: foodItemId, OR: [{ userId: user.userId }, { userId: null }] },
+  });
+  if (!food) return { ok: false, error: "That food is no longer in your library." };
+
+  const eatenAt = eatenAtIso ? new Date(eatenAtIso) : new Date();
+  if (Number.isNaN(eatenAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  // A barcode row has a real label serving, so `amount` means servings there and
+  // grams elsewhere.
+  const isServing = food.barcode !== null;
+  const grams = isServing ? food.defaultGrams * amount : amount;
+  const f = grams / 100;
+
+  await prisma.entry.create({
+    data: {
+      userId: user.userId,
+      eatenAt,
+      localDate: toLocalDate(eatenAt, user.timezone),
+      mealType: guessMealType(eatenAt, user.timezone),
+      source: "quickadd",
+      rawText: food.displayName,
+      restaurantName: food.restaurantName,
+      items: {
+        create: [
+          {
+            foodItemId: food.id,
+            name: food.displayName,
+            brand: food.brand,
+            quantity: isServing ? amount : 1,
+            unit: isServing ? "serving" : "portion",
+            grams,
+            kcal: food.kcalPer100g * f,
+            protein: food.proteinPer100g * f,
+            carbs: food.carbsPer100g * f,
+            fat: food.fatPer100g * f,
+            fiber: (food.fiberPer100g ?? 0) * f,
+            sugar: (food.sugarPer100g ?? 0) * f,
+            sodium: (food.sodiumPer100g ?? 0) * f,
+            foodGroup: food.foodGroup,
+            processedLevel: food.processedLevel,
+            nutritionSource: food.nutritionSource,
+            confidence: 1,
+            usdaFdcId: food.usdaFdcId,
+          },
+        ],
+      },
+    },
+  });
+
+  await prisma.foodItem
+    .update({
+      where: { id: food.id },
+      data: { timesLogged: { increment: 1 }, lastLoggedAt: new Date() },
+    })
+    .catch(() => {});
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}

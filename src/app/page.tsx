@@ -3,11 +3,14 @@ import {
   getDay,
   getParseUsage,
   getProfile,
+  getRememberedFoods,
+  getRememberedMeals,
   targetsForProfile,
 } from "@/lib/queries";
 import { env } from "@/lib/env";
 import { todayIso } from "@/lib/time";
 import { EntryBox } from "./entry-box";
+import { Remembered } from "./remembered";
 import { ScoreCard } from "./score-card";
 import { EntryCard } from "./entry-card";
 
@@ -58,7 +61,7 @@ export default async function TodayPage() {
   const targets = targetsForProfile(profile);
   const today = todayIso(profile.timezone);
 
-  const [day, usage] = await Promise.all([
+  const [day, usage, rememberedMeals, rememberedFoods] = await Promise.all([
     getDay(
       user.userId,
       today,
@@ -71,6 +74,8 @@ export default async function TodayPage() {
         : null,
     ),
     getParseUsage(user.userId, today),
+    getRememberedMeals(user.userId),
+    getRememberedFoods(user.userId),
   ]);
 
   const totals = day.score?.totals ?? {
@@ -96,7 +101,17 @@ export default async function TodayPage() {
         </p>
       </div>
 
-      <EntryBox parsesRemaining={remaining} />
+      <EntryBox
+        parsesRemaining={remaining}
+        knownMeals={rememberedMeals.map((m) => ({
+          entryId: m.entryId,
+          rawText: m.rawText,
+          kcal: m.kcal,
+          timesLogged: m.timesLogged,
+        }))}
+      />
+
+      <Remembered meals={rememberedMeals} foods={rememberedFoods} />
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Calories" value={totals.kcal} of={targets.kcal} unit="kcal" />
