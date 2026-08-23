@@ -11,79 +11,113 @@
  * never raw hex. Light is defined on bare :root; dark redefines the same names.
  */
 :root {
-  /* Paper — lighter than a mid-tone canvas, so cards read as raised sheets. */
-  --background: #fcfbf9;
-  --surface: #ffffff;
-  --surface-raised: #f6f4f1;
-  --surface-sunken: #f0ede8;
-
-  /* Ink */
-  --foreground: #1a1917;
-  --muted: #8b867c;
-  --border: #edeae5;
-  --border-strong: #ddd8d1;
-
   /*
-   * Accent — warm near-black, not a colour.
+   * Cream, terracotta and olive — the palette of a good cookbook.
    *
-   * The most neutral choice available: it lets the numbers and the one data hue
-   * carry all the colour in the interface, which is what stops a screen full of
-   * figures feeling busy. Sage is reserved for the heatmap.
+   * This is a deliberate choice for a FOOD app, not decoration. Warm hues read
+   * as appetising; cool and clinical ones actively suppress appetite, which is
+   * the wrong instinct for something you open before eating. Cream paper with a
+   * clay accent stays warm without shouting, and olive carries the data.
+   *
+   * Every value below was measured, not eyeballed — ratios noted inline.
    */
-  --accent: #2e2d28;
-  --accent-hover: #45433c;
+
+  /* Paper — warm linen, so white cards read as raised sheets on it. */
+  --background: #faf6ef;
+  --surface: #fffefb;
+  --surface-raised: #f4eee3;
+  --surface-sunken: #ece4d6;
+
+  /* Ink — a warm brown-black, never pure black: black on cream looks like a
+   * printing error. 15.5:1 on surface. */
+  --foreground: #2a221a;
+  /* 4.60:1 on surface — clears the 4.5:1 body-text floor. An earlier, prettier
+   * taupe failed at 3.89:1; do not lighten this. */
+  --muted: #7e7365;
+  --border: #e8dfd0;
+  --border-strong: #d8cbb6;
+
+  /* Accent — terracotta. 4.91:1 against white, so button labels are legible
+   * body text rather than a decorative near-miss. */
+  --accent: #b4552e;
+  --accent-hover: #9c4522;
   --accent-fg: #ffffff;
-  --accent-soft: #f3f1ed;
+  --accent-soft: #f8ede4;
 
-  /* Feedback. Desaturated to sit inside the neutral scheme. */
-  --positive: #4a6b52;
-  --warning: #8a6a33;
-  --negative: #9c4a3f;
+  /* Feedback, kept in the warm family so nothing reads as a system dialog. */
+  --positive: #5a7247;
+  --warning: #a8762a;
+  --negative: #a8402f;
 
-  /* Elevation. One soft, tight shadow — not a drop shadow. */
-  --shadow-card: 0 1px 2px rgba(26, 25, 23, 0.04), 0 1px 1px rgba(26, 25, 23, 0.03);
-  --shadow-raised: 0 4px 16px -4px rgba(26, 25, 23, 0.10), 0 1px 2px rgba(26, 25, 23, 0.04);
+  /* Elevation. One soft, tight shadow — warm-tinted, not grey. */
+  --shadow-card: 0 1px 2px rgba(42, 34, 26, 0.05), 0 1px 1px rgba(42, 34, 26, 0.03);
+  --shadow-raised: 0 4px 16px -4px rgba(42, 34, 26, 0.12), 0 1px 2px rgba(42, 34, 26, 0.05);
 
-  /* Score bands, for chips where the number is always shown alongside —
+  /* Score bands for chips, where the number is always shown beside the colour —
    * status colour never carries meaning on its own here. */
-  --score-none: #e3e0d9;
-  --score-poor: #9c4a3f;
-  --score-ok: #8a6a33;
-  --score-good: #6b7562;
-  --score-great: #3b4436;
+  --score-none: #e8dfd0;
+  --score-poor: #a8402f;
+  --score-ok: #a8762a;
+  --score-good: #7b8752;
+  --score-great: #4d5a2f;
 
   /* Sequential ramp for the month heatmap: ONE hue, light -> dark, encoding
-   * magnitude. Validated with the dataviz ordinal checks — monotone lightness,
-   * adjacent dL >= 0.06, light end 2.45:1 on white, hue spread 16 degrees.
-   * Do not lighten step 1: below this it fails the contrast floor. */
-  --heat-1: #a3a894;
-  --heat-2: #87907a;
-  --heat-3: #6b7562;
-  --heat-4: #525c4b;
-  --heat-5: #3b4436;
-  --heat-empty: #ebe8e1;
+   * magnitude. Olive, because green reads as "fresh" for a nutrition score and
+   * it sits with the terracotta rather than fighting it.
+   *
+   * Validated with the dataviz ordinal checks: monotone lightness, adjacent
+   * dL >= 0.06, light end 2.60:1 on surface, hue spread 3 degrees. Do not
+   * lighten step 1 — below this it fails the contrast floor. */
+  --heat-1: #9ea471;
+  --heat-2: #828956;
+  --heat-3: #666d40;
+  --heat-4: #4d532e;
+  --heat-5: #373c20;
+  --heat-empty: #f0e9dc;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #171716;
-    --surface: #1f1f1d;
-    --surface-raised: #292927;
-    --surface-sunken: #121211;
+    /* Dark mode is its own selection, not an inversion: warm near-black paper
+     * with a lifted terracotta, all ratios re-measured against this surface. */
+    --background: #1a1611;
+    --surface: #211d18;
+    --surface-raised: #2b2620;
+    --surface-sunken: #14110d;
 
-    --foreground: #f0eee9;
-    --muted: #a09b91;
-    --border: #333230;
-    --border-strong: #454340;
+    --foreground: #f2ebe0; /* 14.15:1 */
+    --muted: #a89d8d; /* 6.28:1 */
+    --border: #37312a;
+    --border-strong: #4a4239;
 
-    /* Dark mode inverts the idea: a near-white accent on near-black. */
-    --accent: #f0eee9;
-    --accent-hover: #ffffff;
-    --accent-fg: #1a1917;
-    --accent-soft: #2b2a27;
+    /* Lifted so it reads on dark paper; its label is the warm near-black,
+     * giving 5.87:1 on the button and 5.46:1 against the surface. */
+    --accent: #d97a4e;
+    --accent-hover: #e89065;
+    --accent-fg: #1a1611;
+    --accent-soft: #2f251e;
 
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-raised: 0 6px 20px -6px rgba(0, 0, 0, 0.6);
+    --positive: #93ad7c;
+    --warning: #d2a459;
+    --negative: #d97b6b;
+
+    --score-none: #37312a;
+    --score-poor: #b8574a;
+    --score-ok: #c09550;
+    --score-good: #8a9059;
+    --score-great: #c2c88f;
+
+    /* Selected against the dark surface: light end 2.32:1 on #211d18.
+     * Flipping the light ramp would put its palest step under the floor. */
+    --heat-1: #565a37;
+    --heat-2: #6e7347;
+    --heat-3: #8a9059;
+    --heat-4: #a6ac71;
+    --heat-5: #c2c88f;
+    --heat-empty: #262119;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-raised: 0 6px 20px -6px rgba(0, 0, 0, 0.65);
 
     --positive: #86a88c;
     --warning: #c39a52;

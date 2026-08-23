@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CalorieGenius">
-  <rect width="512" height="512" rx="96" fill="#55614f"/>
+  <rect width="512" height="512" rx="96" fill="#b4552e"/>
   <text x="256" y="330" font-family="ui-sans-serif, system-ui, -apple-system, Helvetica, Arial, sans-serif"
         font-size="248" font-weight="600" fill="#ffffff" text-anchor="middle">cg</text>
 </svg>

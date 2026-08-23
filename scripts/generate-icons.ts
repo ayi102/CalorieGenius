@@ -23,7 +23,7 @@ async function main() {
   const maskable = await sharp({
     create: {
       width: 512, height: 512, channels: 4,
-      background: { r: 0x55, g: 0x61, b: 0x4f, alpha: 1 },
+      background: { r: 0xb4, g: 0x55, b: 0x2e, alpha: 1 },
     },
   })
     .composite([

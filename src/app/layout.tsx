@@ -27,8 +27,8 @@ export const viewport: Viewport = {
   // Let the page fill the notch area; the layout adds safe-area padding itself.
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#141a22" },
+    { media: "(prefers-color-scheme: light)", color: "#faf6ef" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a1611" },
   ],
 };
 
