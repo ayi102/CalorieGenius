@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { authMode } from "@/lib/env";
 import { DevUserSwitcher } from "./dev-user-switcher";
 import { DesktopNav, MobileTabBar } from "./nav";
+import { THEME_INIT_SCRIPT, ThemeToggle } from "./theme-toggle";
 import { listDevProfiles } from "@/lib/queries";
 import { signOut } from "@/lib/auth-actions";
 import "./globals.css";
@@ -44,7 +45,13 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        {/* Before paint: applies a saved theme so the page never flashes the
+            wrong one. Must be blocking and inline for that to hold. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         {user && (
           <header className="sticky top-0 z-30 border-b border-border bg-surface/95 backdrop-blur">
@@ -61,7 +68,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
 
               <DesktopNav />
 
-              <div className="ml-auto flex items-center gap-2 text-sm">
+              <div className="ml-auto flex items-center gap-1.5 text-sm">
+                <ThemeToggle compact />
                 {isDev ? (
                   <DevUserSwitcher profiles={devProfiles} currentUserId={user.userId} />
                 ) : (

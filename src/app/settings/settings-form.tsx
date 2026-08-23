@@ -5,6 +5,7 @@ import { updateProfile, type ActionResult } from "@/lib/actions";
 import type { ProfileView } from "@/lib/queries";
 import type { Targets } from "@/lib/scoring";
 import { formatLocalMinutes, windowLength } from "@/lib/time";
+import { ThemeToggle } from "../theme-toggle";
 import {
   BOUNDS,
   cmToFeetInches,
@@ -342,6 +343,11 @@ export function SettingsForm({
         )}
         <input type="hidden" name="eatingWindowStart" value={winStart} />
         <input type="hidden" name="eatingWindowEnd" value={winEnd} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold">Appearance</h2>
+        <ThemeToggle />
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">

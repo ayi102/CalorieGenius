@@ -76,8 +76,23 @@
   --heat-empty: #f0e9dc;
 }
 
+/*
+ * Dark theme, three states.
+ *
+ *   no data-theme        -> follow the operating system
+ *   data-theme="light"   -> force cream, even on a dark phone
+ *   data-theme="dark"    -> force dark, even on a light phone
+ *
+ * The cream theme is this app's design intent; dark is opt-in. Without the
+ * explicit override a phone set to Dark Appearance would silently get the dark
+ * theme with no way out, which is exactly what happened.
+ *
+ * NOTE: the two blocks below are intentionally identical and MUST stay in sync.
+ * CSS cannot share a declaration block between a media query and a plain
+ * selector, and `light-dark()` is not dependable enough to rely on yet.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     /* Dark mode is its own selection, not an inversion: warm near-black paper
      * with a lifted terracotta, all ratios re-measured against this surface. */
     --background: #1a1611;
@@ -141,6 +156,69 @@
   }
 }
 
+:root[data-theme="dark"] {
+    /* Dark mode is its own selection, not an inversion: warm near-black paper
+     * with a lifted terracotta, all ratios re-measured against this surface. */
+    --background: #1a1611;
+    --surface: #211d18;
+    --surface-raised: #2b2620;
+    --surface-sunken: #14110d;
+
+    --foreground: #f2ebe0; /* 14.15:1 */
+    --muted: #a89d8d; /* 6.28:1 */
+    --border: #37312a;
+    --border-strong: #4a4239;
+
+    /* Lifted so it reads on dark paper; its label is the warm near-black,
+     * giving 5.87:1 on the button and 5.46:1 against the surface. */
+    --accent: #d97a4e;
+    --accent-hover: #e89065;
+    --accent-fg: #1a1611;
+    --accent-soft: #2f251e;
+
+    --positive: #93ad7c;
+    --warning: #d2a459;
+    --negative: #d97b6b;
+
+    --score-none: #37312a;
+    --score-poor: #b8574a;
+    --score-ok: #c09550;
+    --score-good: #8a9059;
+    --score-great: #c2c88f;
+
+    /* Selected against the dark surface: light end 2.32:1 on #211d18.
+     * Flipping the light ramp would put its palest step under the floor. */
+    --heat-1: #565a37;
+    --heat-2: #6e7347;
+    --heat-3: #8a9059;
+    --heat-4: #a6ac71;
+    --heat-5: #c2c88f;
+    --heat-empty: #262119;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-raised: 0 6px 20px -6px rgba(0, 0, 0, 0.65);
+
+    --positive: #86a88c;
+    --warning: #c39a52;
+    --negative: #cc7a6d;
+
+    --score-none: #302f2c;
+    --score-poor: #a05548;
+    --score-ok: #a07c38;
+    --score-good: #77816a;
+    --score-great: #abb49c;
+
+    /* Selected against the dark surface, not inverted from the light ramp:
+     * light end 2.10:1 on #1c1c1a. Flipping the light ramp would put its palest
+     * step under the floor. */
+    --heat-1: #4a5243;
+    --heat-2: #5e6853;
+    --heat-3: #77816a;
+    --heat-4: #909a82;
+    --heat-5: #abb49c;
+    --heat-empty: #232320;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
@@ -194,6 +272,22 @@
 html {
   /* Stops iOS Safari inflating text in landscape. */
   -webkit-text-size-adjust: 100%;
+  /* Native controls and scrollbars follow the chosen theme, not the OS. */
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+  }
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
 }
 
 body {
