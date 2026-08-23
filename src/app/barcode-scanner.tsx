@@ -74,6 +74,10 @@ export function BarcodeScanner({
     closeRef.current?.focus();
     return () => {
       document.body.style.overflow = prev;
+      // Closing must not hand focus back to a text field: on a phone that opens
+      // the keyboard over the page the user just returned to.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
     };
   }, []);
 
@@ -102,10 +106,14 @@ export function BarcodeScanner({
         stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            // Ask for a higher resolution than the default: barcode stripes are
-            // fine detail, and 480p decodes noticeably worse.
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            // High resolution because barcode stripes are fine detail and 480p
+            // decodes noticeably worse. Requested in PORTRAIT orientation so the
+            // stream roughly matches a phone screen and needs little letterboxing.
+            width: { ideal: 1080 },
+            height: { ideal: 1440 },
+            // Never let the browser hand back a digitally zoomed track.
+            // @ts-expect-error - zoom is not in the standard MediaTrackConstraints type yet
+            zoom: { ideal: 1 },
           },
           audio: false,
         });
@@ -194,7 +202,10 @@ export function BarcodeScanner({
       {/* Camera fills the frame. */}
       <video
         ref={videoRef}
-        className="absolute inset-0 h-full w-full object-cover"
+        // object-CONTAIN, not cover: cover crops a landscape camera stream into a
+        // portrait viewport and throws away most of the frame, which reads as an
+        // unwanted zoom and hides whatever is just outside the crop.
+        className="absolute inset-0 h-full w-full object-contain"
         playsInline
         muted
         aria-hidden="true"

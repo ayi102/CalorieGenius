@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   analyzeEntry,
@@ -75,11 +75,28 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
   const [showRestaurant, setShowRestaurant] = useState(false);
 
   const [scanning, setScanning] = useState(false);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const scanBtnRef = useRef<HTMLButtonElement>(null);
   const [preview, setPreview] = useState<AnalyzeResult | null>(null);
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [analyzing, startAnalyze] = useTransition();
   const [saving, startSave] = useTransition();
+
+  /**
+   * Focus the entry box on desktop only.
+   *
+   * `autoFocus` opened the on-screen keyboard on page load, covering half a
+   * phone screen unasked — and it was what pulled focus back (re-opening the
+   * keyboard) whenever the scanner overlay closed.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isDesktop = window.matchMedia("(min-width: 640px) and (pointer: fine)").matches;
+    if (isDesktop && !preview && !scanning) textRef.current?.focus();
+    // Run on mount only; refocusing on every state change would fight the user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totals = items.reduce(
     (acc, i) => ({
@@ -181,7 +198,15 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
   return (
     <section className="rounded-lg border border-border bg-surface p-4">
       {scanning && (
-        <BarcodeScanner onDetected={onScanned} onClose={() => setScanning(false)} />
+        <BarcodeScanner
+          onDetected={onScanned}
+          onClose={() => {
+            setScanning(false);
+            // Return focus to a button, never a text field: focusing an input
+            // here is what re-opens the phone keyboard on close.
+            requestAnimationFrame(() => scanBtnRef.current?.focus());
+          }}
+        />
       )}
 
       {!preview ? (
@@ -194,8 +219,8 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
             name="rawText"
             value={text}
             onChange={(e) => setText(e.target.value)}
+            ref={textRef}
             rows={2}
-            autoFocus
             placeholder="2 eggs, toast with butter, and a large iced coffee"
             className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-accent"
             onKeyDown={(e) => {
@@ -243,8 +268,14 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
 
             <div className="flex gap-2 sm:ml-auto sm:contents">
               <button
+                ref={scanBtnRef}
                 type="button"
-                onClick={() => setScanning(true)}
+                onClick={() => {
+                  // Dismiss the keyboard before the camera opens, or iOS keeps it
+                  // over the video.
+                  textRef.current?.blur();
+                  setScanning(true);
+                }}
                 className="min-h-11 flex-1 rounded-md border border-border px-3 text-sm text-muted hover:text-foreground sm:flex-none"
                 title="Scan a packaged item's barcode — exact label nutrition, and it doesn't use a parse"
               >
