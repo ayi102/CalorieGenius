@@ -1,0 +1,312 @@
+// CalorieGenius data model.
+//
+// Prisma 7: the datasource block carries no `url` — the CLI reads it from
+// prisma.config.ts, and the runtime client connects through a driver adapter
+// (see src/lib/prisma.ts). There is no `directUrl` in v7; at deploy time the CLI
+// gets the direct Supabase connection and the runtime adapter gets the pooled one.
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums — kept in the DB so a bad value is a write error, not a silent typo.
+// ---------------------------------------------------------------------------
+
+enum Sex {
+  male
+  female
+}
+
+enum ActivityLevel {
+  sedentary // desk job, little exercise      x1.2
+  light // light exercise 1-3 days/week   x1.375
+  moderate // moderate 3-5 days/week          x1.55
+  active // hard exercise 6-7 days/week    x1.725
+  very_active // physical job or 2x/day training x1.9
+}
+
+enum Goal {
+  lose
+  maintain
+  gain
+}
+
+/// Display units for body metrics. Storage is ALWAYS metric (see Profile) —
+/// this only controls what the UI shows and accepts.
+enum UnitSystem {
+  imperial // lb, ft/in
+  metric // kg, cm
+}
+
+enum MealType {
+  breakfast
+  lunch
+  dinner
+  snack
+}
+
+/// How an entry got into the app. Drives which parse path ran and what the UI shows.
+enum EntrySource {
+  text
+  photo
+  barcode
+  restaurant
+  quickadd
+  manual // typed the numbers directly (e.g. past the daily parse cap)
+}
+
+/// Coarse food taxonomy. Powers the month view's "what did I eat" breakdown.
+enum FoodGroup {
+  protein
+  grain
+  vegetable
+  fruit
+  dairy
+  fat
+  sweet
+  beverage
+  mixed_dish
+  alcohol
+}
+
+/// Where a row's nutrition numbers actually came from. Rendered to the user —
+/// an estimate must never be presented as a measurement.
+enum NutritionSource {
+  usda
+  openfoodfacts
+  estimate // the model's guess; no database match
+  user // the user corrected it, and therefore outranks everything
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+/// One row per user. `userId` is the auth subject: a seeded local id under
+/// AUTH_MODE=dev, and the Supabase `sub` claim under AUTH_MODE=supabase.
+model Profile {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  /// Display-only, and the login handle in dev mode.
+  email String @unique
+  name  String?
+
+  /// IANA zone (e.g. "America/New_York"). Every calendar bucket in this app is
+  /// computed against this, never against the server's clock. See src/lib/time.ts.
+  timezone String @default("America/New_York")
+
+  /// How to display and accept body metrics. Storage stays metric regardless,
+  /// so the BMR formula never sees a converted number and rounding cannot drift.
+  unitSystem UnitSystem @default(imperial)
+
+  // --- Body metrics, ALWAYS stored metric (cm / kg) ---
+  sex           Sex?
+  birthDate     DateTime?     @db.Date
+  heightCm      Float?
+  weightKg      Float?
+  activityLevel ActivityLevel @default(moderate)
+  goal          Goal          @default(maintain)
+
+  /// Manual overrides. When set, these win over the computed targets outright —
+  /// the formula is a starting point, not an authority.
+  calorieTargetOverride Int?
+  proteinTargetOverride Int?
+
+  /// Local wall-clock bedtime as minutes past midnight (e.g. 1380 = 23:00).
+  /// Feeds the timing component of the daily score when no eating window is set.
+  bedtimeMinutes Int @default(1380)
+
+  /// Optional eating window (intermittent fasting). When enabled, meals outside
+  /// [start, end) cost timing points, and the window replaces the bedtime rule —
+  /// they measure the same thing, so applying both would double-penalize.
+  ///
+  /// Both are minutes past LOCAL midnight. end <= start means the window wraps
+  /// midnight (e.g. 20:00 -> 04:00), which is a legitimate schedule.
+  eatingWindowEnabled Boolean @default(false)
+  eatingWindowStart   Int     @default(720) // 12:00
+  eatingWindowEnd     Int     @default(1200) // 20:00
+
+  entries    Entry[]
+  foodItems  FoodItem[]
+  parseUsage ParseUsage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One eating occasion. The unit the user thinks in ("lunch"), holding 1..n items.
+model Entry {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  /// The true instant the food was eaten. Editable — defaults to "now" in the UI.
+  eatenAt DateTime @db.Timestamptz(3)
+
+  /// `eatenAt` collapsed into the user's local calendar date at write time.
+  /// Denormalized so day and month views are an index range scan with no
+  /// timezone math in SQL. Derived state: recompute if `Profile.timezone` changes.
+  localDate DateTime @db.Date
+
+  mealType MealType
+  source   EntrySource
+
+  /// Exactly what the user typed, kept verbatim. Enables re-parsing after a
+  /// prompt improvement, and is the key into ParseCache.
+  rawText        String?
+  restaurantName String?
+  notes          String?
+
+  items EntryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The index the whole app leans on: every day and month read hits this.
+  @@index([userId, localDate])
+  @@index([userId, eatenAt])
+}
+
+/// One food within an entry, with its nutrition **denormalized onto the row**.
+/// This is deliberate: correcting a FoodItem tomorrow must not silently rewrite
+/// what yesterday's score was computed from.
+model EntryItem {
+  id      String @id @default(cuid())
+  entryId String
+  entry   Entry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  /// The library row this came from, if any. Nullable — a one-off estimate has none.
+  foodItemId String?
+  foodItem   FoodItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+
+  name  String
+  brand String?
+
+  // --- Portion. `grams` is what all nutrition below was scaled by, and is
+  // editable in the UI because portion size is this app's real accuracy ceiling.
+  quantity Float  @default(1)
+  unit     String @default("serving")
+  grams    Float
+
+  // --- Resolved nutrition for THIS portion (not per 100g).
+  kcal    Float
+  protein Float
+  carbs   Float
+  fat     Float
+  fiber   Float?
+  sugar   Float?
+  sodium  Float?
+
+  foodGroup FoodGroup
+
+  /// NOVA-style processing level 1..4. Feeds the food-quality score component.
+  processedLevel Int
+
+  nutritionSource NutritionSource
+
+  /// 0..1, the parser's own confidence. Low values get flagged in the UI.
+  confidence Float @default(0.5)
+
+  usdaFdcId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([entryId])
+  @@index([foodItemId])
+}
+
+/// The food library and resolution cache, stored **per 100 g** so any portion
+/// scales from it. This table is what makes the app cheap: a repeat food costs
+/// zero API calls, and it's the source for quick-add.
+model FoodItem {
+  id String @id @default(cuid())
+
+  /// Null means shared across all users (e.g. a USDA or Open Food Facts row).
+  /// Non-null means user-specific, which is how a user's correction stays theirs.
+  userId  String?
+  profile Profile? @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  /// Lookup key: lowercased, punctuation stripped, tokens sorted. Built by
+  /// normalizeFoodName() so "Greek yogurt, plain" and "plain greek yogurt" collide.
+  normalizedName String
+  displayName    String
+  brand          String?
+  restaurantName String?
+  barcode        String?
+  usdaFdcId      String?
+
+  // --- Nutrition per 100 g ---
+  kcalPer100g    Float
+  proteinPer100g Float
+  carbsPer100g   Float
+  fatPer100g     Float
+  fiberPer100g   Float?
+  sugarPer100g   Float?
+  sodiumPer100g  Float?
+
+  /// A sensible default portion in grams, so quick-add needs no typing.
+  defaultGrams Float @default(100)
+
+  foodGroup       FoodGroup
+  processedLevel  Int
+  nutritionSource NutritionSource
+
+  /// Drives quick-add ordering — the "figure out what foods I like" signal.
+  timesLogged Int       @default(0)
+  lastLoggedAt DateTime?
+
+  entryItems EntryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A user's own version of a food must not collide with the shared one.
+  @@unique([userId, normalizedName, brand])
+  @@index([userId, timesLogged(sort: Desc)])
+  @@index([barcode])
+  @@index([normalizedName])
+}
+
+/// Memoized parse results, keyed by a hash of the normalized input text.
+/// Re-logging the same sentence never calls the model twice.
+model ParseCache {
+  id       String @id @default(cuid())
+  textHash String @unique
+
+  /// The verbatim ParsedMeal JSON the parser returned.
+  result Json
+
+  /// Which model produced it, so a model change can invalidate selectively
+  /// rather than requiring a full table wipe.
+  model String
+
+  hitCount Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([model])
+}
+
+/// Per-user, per-day parse meter. Enforces DAILY_PARSE_LIMIT and backs the spend
+/// view. Also a circuit breaker: a retry bug burns a quota, not a credit balance.
+model ParseUsage {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  localDate DateTime @db.Date
+
+  parseCount         Int @default(0)
+  estimatedCostCents Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, localDate])
+}

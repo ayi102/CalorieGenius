@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+/*
+ * Semantic color tokens.
+ *
+ * Components reference these by role (bg-surface, text-muted, text-positive),
+ * never raw palette values — that's what keeps light and dark consistent and
+ * makes a palette change a one-file edit.
+ *
+ * Light is defined on bare :root; dark only redefines the same names.
+ */
+:root {
+  --background: #f7f8fa;
+  --surface: #ffffff;
+  --surface-raised: #f1f3f6;
+  --foreground: #10151c;
+  --muted: #667085;
+  --border: #e4e7ec;
+  --accent: #2f6f4f;
+  --accent-fg: #ffffff;
+
+  /* Feedback */
+  --positive: #12805c;
+  --warning: #b26a00;
+  --negative: #c0392b;
+
+  /* Score bands for chips, where the number is always shown beside the colour —
+   * status colours are legal there because they never carry meaning alone. */
+  --score-none: #e4e7ec;
+  --score-poor: #d9534f;
+  --score-ok: #e0a030;
+  --score-good: #7fae4f;
+  --score-great: #2f8f5b;
+
+  /* Sequential ramp for the month heatmap: ONE hue, light -> dark, encoding
+   * magnitude. Deliberately not the band colours above — a red-to-green rainbow
+   * across a grid is unreadable under colour-vision deficiency and implies
+   * category boundaries that a 0-100 score does not have.
+   *
+   * Validated with the dataviz ordinal checks (monotone lightness, adjacent
+   * dL >= 0.06, light end >= 2:1 on the surface, single hue): light end
+   * #7ebb99 clears 2.22:1 on white. Do not lighten step 1 — it fails below this. */
+  --heat-1: #7ebb99;
+  --heat-2: #5da37f;
+  --heat-3: #3f8763;
+  --heat-4: #2a6b4b;
+  --heat-5: #1c5038;
+  --heat-empty: #eef0f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0e13;
+    --surface: #141a22;
+    --surface-raised: #1c242e;
+    --foreground: #e8ecf1;
+    --muted: #93a0b0;
+    --border: #232c38;
+    --accent: #4ea87a;
+    --accent-fg: #06120c;
+
+    --positive: #35c691;
+    --warning: #e0a030;
+    --negative: #ff6b5e;
+
+    --score-none: #232c38;
+    --score-poor: #b8443f;
+    --score-ok: #b8801f;
+    --score-good: #5f8f3a;
+    --score-great: #35a76a;
+
+    /* Dark ramp is SELECTED against the dark surface, not an inversion of the
+     * light one: light end #305c49 clears 2.29:1 on #141a22. Flipping the light
+     * ramp would put its palest step below the contrast floor. */
+    --heat-1: #305c49;
+    --heat-2: #3e7659;
+    --heat-3: #4d926f;
+    --heat-4: #5eae86;
+    --heat-5: #72c99c;
+    --heat-empty: #1b2229;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-negative: var(--negative);
+
+  --color-score-none: var(--score-none);
+  --color-score-poor: var(--score-poor);
+  --color-score-ok: var(--score-ok);
+  --color-score-good: var(--score-good);
+  --color-score-great: var(--score-great);
+
+  --color-heat-1: var(--heat-1);
+  --color-heat-2: var(--heat-2);
+  --color-heat-3: var(--heat-3);
+  --color-heat-4: var(--heat-4);
+  --color-heat-5: var(--heat-5);
+  --color-heat-empty: var(--heat-empty);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Monaco, Consolas, monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+/* Figures line up in tables and stat rows without hand-tuning. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}

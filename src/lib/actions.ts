@@ -1,0 +1,855 @@
+"use server";
+
+/**
+ * Write side of the data layer — every mutation in the app lives here.
+ *
+ * Rules, both load-bearing:
+ *  1. `requireUser()` is the FIRST line of every action. Server Actions are
+ *     reachable as HTTP endpoints regardless of what the UI renders, so an
+ *     action without it is an unauthenticated write endpoint.
+ *  2. Never trust an id from the client for ownership. Scope by the userId that
+ *     requireUser() returned, and verify parent ownership inside the same
+ *     transaction as the write.
+ */
+
+import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { DEV_USER_COOKIE, requireUser } from "@/lib/auth";
+import { authMode } from "@/lib/env";
+import { resolveEntry, ParseLimitError } from "@/lib/nutrition/resolve";
+import { guessMealType, toLocalDate } from "@/lib/time";
+import { feetInchesToCm, lbToKg, type UnitSystem } from "@/lib/units";
+import { normalizeFoodName } from "@/lib/nutrition/normalize";
+import { lookupBarcode } from "@/lib/nutrition/off";
+import { searchUsdaByBarcode } from "@/lib/nutrition/usda";
+
+export interface ActionResult {
+  ok: boolean;
+  error?: string;
+}
+
+/** Parse a form field into a number, treating blank as "not set". */
+function optionalNumber(
+  form: FormData,
+  key: string,
+  opts: { min?: number; max?: number; integer?: boolean } = {},
+): number | null | undefined {
+  const raw = form.get(key);
+  if (raw === null) return undefined; // field absent — leave unchanged
+  const s = String(raw).trim();
+  if (s === "") return null; // field present but blank — clear it
+  const n = Number(s);
+  if (!Number.isFinite(n)) return undefined;
+  if (opts.min !== undefined && n < opts.min) return undefined;
+  if (opts.max !== undefined && n > opts.max) return undefined;
+  return opts.integer ? Math.round(n) : n;
+}
+
+const SEXES = ["male", "female"] as const;
+const ACTIVITY = [
+  "sedentary",
+  "light",
+  "moderate",
+  "active",
+  "very_active",
+] as const;
+const GOALS = ["lose", "maintain", "gain"] as const;
+const UNIT_SYSTEMS = ["imperial", "metric"] as const;
+
+function optionalEnum<T extends readonly string[]>(
+  form: FormData,
+  key: string,
+  allowed: T,
+): T[number] | null | undefined {
+  const raw = form.get(key);
+  if (raw === null) return undefined;
+  const s = String(raw).trim();
+  if (s === "") return null;
+  return (allowed as readonly string[]).includes(s)
+    ? (s as T[number])
+    : undefined;
+}
+
+/**
+ * Update the signed-in user's profile.
+ *
+ * Only ever writes to `where: { userId }` from the session — the form cannot
+ * name a different user.
+ */
+export async function updateProfile(form: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const timezoneRaw = form.get("timezone");
+  const timezone =
+    timezoneRaw === null ? undefined : String(timezoneRaw).trim() || undefined;
+
+  // Reject an unknown timezone rather than storing a string that would silently
+  // break every date bucket for this user.
+  if (timezone !== undefined) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    } catch {
+      return { ok: false, error: `"${timezone}" is not a valid IANA timezone.` };
+    }
+  }
+
+  const nameRaw = form.get("name");
+  const birthRaw = form.get("birthDate");
+
+  let birthDate: Date | null | undefined = undefined;
+  if (birthRaw !== null) {
+    const s = String(birthRaw).trim();
+    if (s === "") {
+      birthDate = null;
+    } else {
+      // A date input is a calendar date; anchor it at UTC midnight so it cannot
+      // drift a day in a negative-offset zone.
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+      if (!m) return { ok: false, error: "Birth date must be YYYY-MM-DD." };
+      birthDate = new Date(
+        Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])),
+      );
+      if (Number.isNaN(birthDate.getTime())) {
+        return { ok: false, error: "Birth date is not a real date." };
+      }
+    }
+  }
+
+  // --- Units. Storage is always metric; the form may submit either system.
+  // Converting server-side means a tampered or stale client cannot write a
+  // pound value into a kilogram column.
+  const unitSystem = optionalEnum(form, "unitSystem", UNIT_SYSTEMS);
+  const effectiveSystem =
+    unitSystem ?? (await currentUnitSystem(user.userId)) ?? "imperial";
+
+  let heightCm: number | null | undefined;
+  let weightKg: number | null | undefined;
+
+  if (effectiveSystem === "imperial") {
+    const feet = optionalNumber(form, "heightFeet", { min: 1, max: 8, integer: true });
+    const inches = optionalNumber(form, "heightInches", { min: 0, max: 11 });
+    // Absent entirely -> leave unchanged. Present but blank -> clear.
+    if (feet === undefined && inches === undefined) {
+      heightCm = undefined;
+    } else if (feet === null || feet === undefined) {
+      heightCm = null;
+    } else {
+      heightCm = feetInchesToCm(feet, inches ?? 0);
+    }
+
+    const lb = optionalNumber(form, "weightLb", { min: 45, max: 880 });
+    weightKg = lb === undefined ? undefined : lb === null ? null : lbToKg(lb);
+  } else {
+    heightCm = optionalNumber(form, "heightCm", { min: 50, max: 260 });
+    weightKg = optionalNumber(form, "weightKg", { min: 20, max: 400 });
+  }
+
+  await prisma.profile.update({
+    where: { userId: user.userId },
+    data: {
+      name: nameRaw === null ? undefined : String(nameRaw).trim() || null,
+      timezone,
+      unitSystem: unitSystem ?? undefined,
+      sex: optionalEnum(form, "sex", SEXES),
+      birthDate,
+      heightCm,
+      weightKg,
+      activityLevel: optionalEnum(form, "activityLevel", ACTIVITY) ?? undefined,
+      goal: optionalEnum(form, "goal", GOALS) ?? undefined,
+      calorieTargetOverride: optionalNumber(form, "calorieTargetOverride", {
+        min: 800,
+        max: 8000,
+        integer: true,
+      }),
+      proteinTargetOverride: optionalNumber(form, "proteinTargetOverride", {
+        min: 20,
+        max: 400,
+        integer: true,
+      }),
+      bedtimeMinutes:
+        optionalNumber(form, "bedtimeMinutes", {
+          min: 0,
+          max: 1439,
+          integer: true,
+        }) ?? undefined,
+      // A checkbox is absent from the FormData when unchecked, so its absence
+      // means false — not "leave unchanged" as it does for text fields.
+      eatingWindowEnabled: form.has("eatingWindowSubmitted")
+        ? form.get("eatingWindowEnabled") === "on"
+        : undefined,
+      eatingWindowStart:
+        optionalNumber(form, "eatingWindowStart", {
+          min: 0,
+          max: 1439,
+          integer: true,
+        }) ?? undefined,
+      eatingWindowEnd:
+        optionalNumber(form, "eatingWindowEnd", {
+          min: 0,
+          max: 1439,
+          integer: true,
+        }) ?? undefined,
+    },
+  });
+
+  // Targets and the timezone affect every view.
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/**
+ * Dev-only: switch which seeded user the app is acting as.
+ *
+ * Guarded by authMode() so it is inert the moment real auth is on, and env.ts
+ * additionally refuses AUTH_MODE=dev in production.
+ */
+export async function switchDevUser(form: FormData): Promise<void> {
+  if (authMode() !== "dev") {
+    throw new Error("The dev user switcher is disabled under real auth.");
+  }
+
+  const userId = String(form.get("userId") ?? "").trim();
+  // Only ever accept an id that actually exists, so the cookie can't be used to
+  // wedge the app into a nonexistent session.
+  const exists = await prisma.profile.findUnique({
+    where: { userId },
+    select: { userId: true },
+  });
+  if (!exists) throw new Error(`No seeded profile "${userId}".`);
+
+  const jar = await cookies();
+  jar.set(DEV_USER_COOKIE, userId, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+  });
+
+  revalidatePath("/", "layout");
+  redirect("/");
+}
+
+// ---------------------------------------------------------------------------
+// Food entry
+// ---------------------------------------------------------------------------
+
+/** A parsed item as sent to the browser for confirmation. Plain data only. */
+export interface PreviewItem {
+  name: string;
+  brand: string | null;
+  quantity: number;
+  unit: string;
+  grams: number;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  sugar: number;
+  sodium: number;
+  foodGroup: string;
+  processedLevel: number;
+  nutritionSource: string;
+  confidence: number;
+  usdaFdcId: string | null;
+  foodItemId: string | null;
+  provenance: string;
+  lookupUnavailable: boolean;
+}
+
+export interface AnalyzeResult {
+  ok: boolean;
+  error?: string;
+  /** Set when the daily cap is hit, so the UI can offer manual entry instead. */
+  limitReached?: boolean;
+  items?: PreviewItem[];
+  restaurantName?: string | null;
+  note?: string;
+  isFood?: boolean;
+  cached?: boolean;
+  parsesRemaining?: number;
+  /** Echoed back so the save step reuses exactly what was previewed. */
+  rawText?: string;
+  eatenAtIso?: string;
+}
+
+/**
+ * Parse text into items for confirmation. Does NOT write an Entry.
+ *
+ * Split from saving on purpose: portion estimates are the weakest part of this
+ * pipeline, so the user gets to see and correct grams before anything is
+ * committed to their diary.
+ */
+export async function analyzeEntry(form: FormData): Promise<AnalyzeResult> {
+  const user = await requireUser();
+
+  const rawText = String(form.get("rawText") ?? "").trim();
+  const restaurantName =
+    String(form.get("restaurantName") ?? "").trim() || null;
+
+  if (rawText === "") return { ok: false, error: "Type what you ate first." };
+
+  // The client sends a local datetime string; treat a missing/invalid one as now
+  // rather than rejecting the entry.
+  const eatenAtRaw = String(form.get("eatenAt") ?? "").trim();
+  const eatenAt = eatenAtRaw ? new Date(eatenAtRaw) : new Date();
+  if (Number.isNaN(eatenAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  try {
+    const outcome = await resolveEntry(user.userId, user.timezone, rawText, {
+      eatenAt,
+      restaurantName,
+    });
+
+    if (!outcome.isFood || outcome.items.length === 0) {
+      return {
+        ok: false,
+        error:
+          "That doesn't look like food. Try something like “2 eggs and toast with butter”.",
+      };
+    }
+
+    return {
+      ok: true,
+      items: outcome.items.map((i) => ({
+        name: i.name,
+        brand: i.brand,
+        quantity: i.quantity,
+        unit: i.unit,
+        grams: i.grams,
+        kcal: i.nutrition.kcal,
+        protein: i.nutrition.protein,
+        carbs: i.nutrition.carbs,
+        fat: i.nutrition.fat,
+        fiber: i.nutrition.fiber,
+        sugar: i.nutrition.sugar,
+        sodium: i.nutrition.sodium,
+        foodGroup: i.foodGroup,
+        processedLevel: i.processedLevel,
+        nutritionSource: i.nutritionSource,
+        confidence: i.confidence,
+        usdaFdcId: i.usdaFdcId,
+        foodItemId: i.foodItemId,
+        provenance: i.provenance,
+        lookupUnavailable: i.lookupUnavailable,
+      })),
+      restaurantName: outcome.restaurantName,
+      note: outcome.note,
+      isFood: true,
+      cached: outcome.cached,
+      parsesRemaining: outcome.usage.parsesRemaining,
+      rawText,
+      eatenAtIso: eatenAt.toISOString(),
+    };
+  } catch (error) {
+    if (error instanceof ParseLimitError) {
+      return { ok: false, limitReached: true, error: error.message };
+    }
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Could not read that. Try rewording it.",
+    };
+  }
+}
+
+export interface SaveEntryInput {
+  rawText: string;
+  eatenAtIso: string;
+  restaurantName: string | null;
+  source: "text" | "photo" | "barcode" | "restaurant" | "quickadd" | "manual";
+  items: PreviewItem[];
+}
+
+/**
+ * Persist a confirmed entry.
+ *
+ * Nutrition is written onto EntryItem rows rather than referenced, so a later
+ * correction to a FoodItem never silently rewrites a past day's score.
+ *
+ * The grams the user confirmed are authoritative: if they edited a portion, the
+ * nutrition is rescaled here from the same ratio, because the numbers shown to
+ * them must be the numbers stored.
+ */
+export async function saveEntry(input: SaveEntryInput): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: "Nothing to save." };
+  }
+
+  const eatenAt = new Date(input.eatenAtIso);
+  if (Number.isNaN(eatenAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  const localDate = toLocalDate(eatenAt, user.timezone);
+  const mealType = guessMealType(eatenAt, user.timezone);
+
+  try {
+    await prisma.entry.create({
+      data: {
+        userId: user.userId,
+        eatenAt,
+        localDate,
+        mealType,
+        source: input.source,
+        rawText: input.rawText,
+        restaurantName: input.restaurantName,
+        items: {
+          create: input.items.map((i) => ({
+            // Only link a FoodItem we can still see; a stale id from the client
+            // must not become a dangling reference.
+            foodItemId: i.foodItemId,
+            name: i.name,
+            brand: i.brand,
+            quantity: i.quantity,
+            unit: i.unit,
+            grams: i.grams,
+            kcal: i.kcal,
+            protein: i.protein,
+            carbs: i.carbs,
+            fat: i.fat,
+            fiber: i.fiber,
+            sugar: i.sugar,
+            sodium: i.sodium,
+            foodGroup: i.foodGroup as never,
+            processedLevel: i.processedLevel,
+            nutritionSource: i.nutritionSource as never,
+            confidence: i.confidence,
+            usdaFdcId: i.usdaFdcId,
+          })),
+        },
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not save that.",
+    };
+  }
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/** Remove one of the user's own entries. */
+export async function deleteEntry(entryId: string): Promise<ActionResult> {
+  const user = await requireUser();
+
+  // Scope the delete by userId in the same statement — never look up first and
+  // trust the id, which would be a TOCTOU hole.
+  const result = await prisma.entry.deleteMany({
+    where: { id: entryId, userId: user.userId },
+  });
+
+  if (result.count === 0) return { ok: false, error: "Entry not found." };
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/**
+ * The user's stored unit preference.
+ *
+ * Needed because a form may omit the unitSystem field (e.g. a partial update),
+ * and we must still know how to interpret the height/weight fields it did send.
+ */
+async function currentUnitSystem(userId: string): Promise<UnitSystem | null> {
+  const p = await prisma.profile.findUnique({
+    where: { userId },
+    select: { unitSystem: true },
+  });
+  return p?.unitSystem ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Editing a saved entry
+// ---------------------------------------------------------------------------
+
+/**
+ * Change a saved item's portion, rescaling its nutrition by the same ratio.
+ *
+ * Ownership is enforced by matching the parent Entry's userId in the same query
+ * — an item id alone must never be enough to touch someone's diary.
+ */
+export async function updateItemGrams(
+  itemId: string,
+  grams: number,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Number.isFinite(grams) || grams <= 0 || grams > 5000) {
+    return { ok: false, error: "Enter a weight between 1 and 5000 g." };
+  }
+
+  const item = await prisma.entryItem.findFirst({
+    where: { id: itemId, entry: { userId: user.userId } },
+  });
+  if (!item) return { ok: false, error: "Item not found." };
+
+  if (item.grams <= 0) return { ok: false, error: "That item has no weight to scale." };
+  const f = grams / item.grams;
+
+  await prisma.entryItem.update({
+    where: { id: item.id },
+    data: {
+      grams,
+      kcal: item.kcal * f,
+      protein: item.protein * f,
+      carbs: item.carbs * f,
+      fat: item.fat * f,
+      fiber: item.fiber === null ? null : item.fiber * f,
+      sugar: item.sugar === null ? null : item.sugar * f,
+      sodium: item.sodium === null ? null : item.sodium * f,
+      // The user has now vouched for this portion, so it stops being a guess.
+      nutritionSource: "user",
+      confidence: 1,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/**
+ * Override a saved item's calories and macros directly.
+ *
+ * The escape hatch for when the parse was simply wrong. Writes
+ * `nutritionSource: "user"`, which outranks every automated source — including a
+ * later USDA match — so a correction is never silently undone.
+ *
+ * Also teaches the food library: the per-100g basis is written back to the
+ * user's own FoodItem row so the same food resolves correctly next time.
+ */
+export async function correctItem(input: {
+  itemId: string;
+  name?: string;
+  grams: number;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+}): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const { itemId, grams, kcal, protein, carbs, fat } = input;
+  const numbers = { grams, kcal, protein, carbs, fat };
+  for (const [key, value] of Object.entries(numbers)) {
+    if (!Number.isFinite(value) || value < 0) {
+      return { ok: false, error: `${key} must be a positive number.` };
+    }
+  }
+  if (grams <= 0 || grams > 5000) {
+    return { ok: false, error: "Enter a weight between 1 and 5000 g." };
+  }
+
+  const item = await prisma.entryItem.findFirst({
+    where: { id: itemId, entry: { userId: user.userId } },
+    select: { id: true, name: true, brand: true, foodGroup: true, processedLevel: true },
+  });
+  if (!item) return { ok: false, error: "Item not found." };
+
+  const name = input.name?.trim() || item.name;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.entryItem.update({
+      where: { id: item.id },
+      data: {
+        name,
+        grams,
+        kcal,
+        protein,
+        carbs,
+        fat,
+        nutritionSource: "user",
+        confidence: 1,
+      },
+    });
+
+    // Remember the correction as the user's own library row, so it wins over the
+    // shared entry next time without altering what other users see.
+    const normalizedName = normalizeFoodName(name);
+    const existing = await tx.foodItem.findFirst({
+      where: { userId: user.userId, normalizedName, brand: item.brand },
+      select: { id: true },
+    });
+
+    const per100g = {
+      kcalPer100g: (kcal * 100) / grams,
+      proteinPer100g: (protein * 100) / grams,
+      carbsPer100g: (carbs * 100) / grams,
+      fatPer100g: (fat * 100) / grams,
+    };
+
+    if (existing) {
+      await tx.foodItem.update({
+        where: { id: existing.id },
+        data: { ...per100g, defaultGrams: grams, nutritionSource: "user" },
+      });
+    } else {
+      await tx.foodItem.create({
+        data: {
+          userId: user.userId,
+          normalizedName,
+          displayName: name,
+          brand: item.brand,
+          ...per100g,
+          defaultGrams: grams,
+          foodGroup: item.foodGroup,
+          processedLevel: item.processedLevel,
+          nutritionSource: "user",
+          timesLogged: 1,
+          lastLoggedAt: new Date(),
+        },
+      });
+    }
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/** Remove one item from a saved entry, deleting the entry if it empties. */
+export async function deleteItem(itemId: string): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const item = await prisma.entryItem.findFirst({
+    where: { id: itemId, entry: { userId: user.userId } },
+    select: { id: true, entryId: true },
+  });
+  if (!item) return { ok: false, error: "Item not found." };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.entryItem.delete({ where: { id: item.id } });
+    // An entry with no items is not a meal — leaving it would show an empty
+    // card and count toward the day's meal-count score.
+    const left = await tx.entryItem.count({ where: { entryId: item.entryId } });
+    if (left === 0) {
+      await tx.entry.delete({ where: { id: item.entryId } });
+    }
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/** Move a saved entry to a different time, re-deriving its local date and meal. */
+export async function updateEntryTime(
+  entryId: string,
+  eatenAtIso: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const eatenAt = new Date(eatenAtIso);
+  if (Number.isNaN(eatenAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  // localDate and mealType are derived from eatenAt, so both must move with it —
+  // otherwise the entry stays filed under the old day.
+  const result = await prisma.entry.updateMany({
+    where: { id: entryId, userId: user.userId },
+    data: {
+      eatenAt,
+      localDate: toLocalDate(eatenAt, user.timezone),
+      mealType: guessMealType(eatenAt, user.timezone),
+    },
+  });
+
+  if (result.count === 0) return { ok: false, error: "Entry not found." };
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Barcode
+// ---------------------------------------------------------------------------
+
+export interface BarcodeResult {
+  ok: boolean;
+  error?: string;
+  item?: PreviewItem;
+}
+
+/**
+ * Resolve a scanned barcode into a confirmable item.
+ *
+ * Costs no model tokens and consumes no parse quota: it is a database lookup,
+ * which is exactly why it is the most accurate input this app has.
+ *
+ * Order: the local FoodItem cache (free, instant, and covers repeat scans of the
+ * same groceries), then Open Food Facts, then USDA's branded set.
+ */
+export async function scanBarcode(barcode: string): Promise<BarcodeResult> {
+  const user = await requireUser();
+
+  const clean = String(barcode).replace(/\D/g, "");
+  if (clean.length < 8 || clean.length > 14) {
+    return { ok: false, error: "That doesn't look like a product barcode." };
+  }
+
+  // 1. Already known — no network call at all.
+  const cached = await prisma.foodItem.findFirst({
+    where: { barcode: clean, OR: [{ userId: user.userId }, { userId: null }] },
+    orderBy: [{ userId: "asc" }],
+  });
+
+  if (cached) {
+    const grams = cached.defaultGrams;
+    const f = grams / 100;
+    return {
+      ok: true,
+      item: {
+        name: cached.displayName,
+        brand: cached.brand,
+        quantity: 1,
+        unit: "serving",
+        grams,
+        kcal: cached.kcalPer100g * f,
+        protein: cached.proteinPer100g * f,
+        carbs: cached.carbsPer100g * f,
+        fat: cached.fatPer100g * f,
+        fiber: (cached.fiberPer100g ?? 0) * f,
+        sugar: (cached.sugarPer100g ?? 0) * f,
+        sodium: (cached.sodiumPer100g ?? 0) * f,
+        foodGroup: cached.foodGroup,
+        processedLevel: cached.processedLevel,
+        nutritionSource: cached.nutritionSource,
+        confidence: 1,
+        usdaFdcId: cached.usdaFdcId,
+        foodItemId: cached.id,
+        provenance:
+          cached.nutritionSource === "user"
+            ? "Your correction"
+            : "Scanned before (cached)",
+        lookupUnavailable: false,
+      },
+    };
+  }
+
+  // 2. Open Food Facts, then 3. USDA branded.
+  try {
+    const off = await lookupBarcode(clean);
+
+    let name: string;
+    let brand: string | null;
+    let per100g: { kcal: number; protein: number; carbs: number; fat: number; fiber: number; sugar: number; sodium: number };
+    let grams: number;
+    let foodGroup: string;
+    let processedLevel: number;
+    let source: "openfoodfacts" | "usda";
+    let usdaFdcId: string | null = null;
+    let provenance: string;
+
+    if (off) {
+      name = off.name;
+      brand = off.brand;
+      per100g = off.per100g;
+      grams = off.defaultGrams;
+      foodGroup = off.foodGroup;
+      processedLevel = off.processedLevel;
+      source = "openfoodfacts";
+      provenance = `Open Food Facts label${off.processedLevelInferred ? " (processing level inferred)" : ""}`;
+    } else {
+      const usda = await searchUsdaByBarcode(clean);
+      if (!usda) {
+        return {
+          ok: false,
+          error:
+            "That barcode isn't in Open Food Facts or USDA. Type the food instead, and it'll be remembered.",
+        };
+      }
+      name = usda.description;
+      brand = null;
+      per100g = usda.per100g;
+      grams = 100;
+      foodGroup = "mixed_dish";
+      processedLevel = 4;
+      source = "usda";
+      usdaFdcId = usda.fdcId;
+      provenance = `USDA branded: ${usda.description}`;
+    }
+
+    // Cache it so a rescan costs nothing and it shows up in quick-add.
+    const saved = await prisma.foodItem
+      .create({
+        data: {
+          userId: null,
+          normalizedName: normalizeFoodName(brand ? `${brand} ${name}` : name),
+          displayName: name,
+          brand,
+          barcode: clean,
+          usdaFdcId,
+          kcalPer100g: per100g.kcal,
+          proteinPer100g: per100g.protein,
+          carbsPer100g: per100g.carbs,
+          fatPer100g: per100g.fat,
+          fiberPer100g: per100g.fiber,
+          sugarPer100g: per100g.sugar,
+          sodiumPer100g: per100g.sodium,
+          defaultGrams: grams,
+          foodGroup: foodGroup as never,
+          processedLevel,
+          nutritionSource: source,
+          timesLogged: 0,
+        },
+        select: { id: true },
+      })
+      .catch(() => null); // a duplicate scan racing itself is harmless
+
+    const f = grams / 100;
+    return {
+      ok: true,
+      item: {
+        name,
+        brand,
+        quantity: 1,
+        unit: "serving",
+        grams,
+        kcal: per100g.kcal * f,
+        protein: per100g.protein * f,
+        carbs: per100g.carbs * f,
+        fat: per100g.fat * f,
+        fiber: per100g.fiber * f,
+        sugar: per100g.sugar * f,
+        sodium: per100g.sodium * f,
+        foodGroup,
+        processedLevel,
+        nutritionSource: source,
+        // A label panel is a measurement, not an estimate.
+        confidence: 1,
+        usdaFdcId,
+        foodItemId: saved?.id ?? null,
+        provenance,
+        lookupUnavailable: false,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? `Lookup failed: ${error.message}`
+          : "Lookup failed.",
+    };
+  }
+}
