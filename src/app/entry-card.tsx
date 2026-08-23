@@ -8,6 +8,7 @@ import {
   deleteItem,
   updateEntryTime,
   updateItemGrams,
+  updateItemServings,
 } from "@/lib/actions";
 import type { DayEntryView, DayItemView } from "@/lib/queries";
 import { formatLocalMinutes } from "@/lib/time";
@@ -48,7 +49,15 @@ function ItemRow({ item }: { item: DayItemView }) {
     fat: Math.round(item.fat),
   };
 
+  // An item logged in servings (a barcode scan) is edited in servings; anything
+  // else in grams. Asking for the grams in a cereal box is not a real question.
+  const perServing =
+    item.unit === "serving" && item.quantity > 0 ? item.grams / item.quantity : null;
+
   const [grams, setGrams] = useState(Math.round(item.grams));
+  const [servings, setServings] = useState(
+    Number((item.quantity || 1).toFixed(2)),
+  );
   const [form, setForm] = useState(pristine);
 
   /**
@@ -62,6 +71,7 @@ function ItemRow({ item }: { item: DayItemView }) {
     setExpanded(false);
     setError(null);
     setGrams(Math.round(item.grams));
+    setServings(Number((item.quantity || 1).toFixed(2)));
     setForm(pristine);
   }
 
@@ -107,13 +117,20 @@ function ItemRow({ item }: { item: DayItemView }) {
         <button
           type="button"
           onClick={() => (expanded ? dismiss() : setExpanded(true))}
-          className="min-w-0 flex-1 truncate text-left hover:text-foreground"
+          // min-h-9 makes the whole row a comfortable tap target rather than a
+          // 12px line of text.
+          className="min-h-9 min-w-0 flex-1 truncate text-left hover:text-foreground"
           aria-expanded={expanded}
         >
           <span className={expanded ? "text-foreground" : "text-muted"}>
             {item.name}
           </span>
-          <span className="text-muted/70"> · {Math.round(item.grams)} g</span>
+          <span className="text-muted/70">
+            {" · "}
+            {perServing
+              ? `${Number(item.quantity.toFixed(2))} ${item.quantity === 1 ? "serving" : "servings"}`
+              : `${Math.round(item.grams)} g`}
+          </span>
           {isEstimate && (
             <span className="ml-1 text-warning" title="Estimated — no database match">
               ~
@@ -136,33 +153,68 @@ function ItemRow({ item }: { item: DayItemView }) {
           </p>
           {/* Fast path: just fix the portion. Nutrition rescales with it. */}
           <div className="flex flex-wrap items-end gap-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] text-muted">Portion</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={1}
-                  max={5000}
-                  value={grams}
-                  onChange={(e) => setGrams(Number(e.target.value))}
-                  className="tnum w-20 rounded border border-border bg-background px-1.5 py-1 text-right text-xs"
-                  aria-label="Grams"
-                />
-                <span className="text-[11px] text-muted">g</span>
-              </div>
-            </label>
-            <button
-              type="button"
-              disabled={pending || grams === Math.round(item.grams)}
-              onClick={() => run(() => updateItemGrams(item.id, grams))}
-              className="rounded bg-accent px-2.5 py-1.5 text-[11px] font-medium text-accent-fg disabled:opacity-50"
-            >
-              Rescale
-            </button>
+            {perServing ? (
+              <>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] text-muted">Servings</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={0.25}
+                      max={50}
+                      step={0.25}
+                      inputMode="decimal"
+                      value={servings}
+                      onChange={(e) => setServings(Number(e.target.value))}
+                      className="tnum min-h-10 w-20 rounded border border-border bg-background px-2 text-right"
+                      aria-label="Servings"
+                    />
+                    <span className="text-[11px] text-muted">
+                      × {Math.round(perServing)} g
+                    </span>
+                  </div>
+                </label>
+                <button
+                  type="button"
+                  disabled={pending || servings === Number(item.quantity.toFixed(2))}
+                  onClick={() => run(() => updateItemServings(item.id, servings))}
+                  className="min-h-10 rounded bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+                >
+                  Rescale
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] text-muted">Portion</span>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={1}
+                      max={5000}
+                      inputMode="numeric"
+                      value={grams}
+                      onChange={(e) => setGrams(Number(e.target.value))}
+                      className="tnum min-h-10 w-20 rounded border border-border bg-background px-2 text-right"
+                      aria-label="Grams"
+                    />
+                    <span className="text-[11px] text-muted">g</span>
+                  </div>
+                </label>
+                <button
+                  type="button"
+                  disabled={pending || grams === Math.round(item.grams)}
+                  onClick={() => run(() => updateItemGrams(item.id, grams))}
+                  className="min-h-10 rounded bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+                >
+                  Rescale
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={dismiss}
-              className="ml-auto rounded border border-border px-2 py-1.5 text-[11px] text-muted hover:text-foreground"
+              className="ml-auto min-h-10 rounded border border-border px-3 text-xs text-muted hover:text-foreground"
             >
               Cancel
             </button>
@@ -170,7 +222,7 @@ function ItemRow({ item }: { item: DayItemView }) {
               type="button"
               disabled={pending}
               onClick={() => run(() => deleteItem(item.id))}
-              className="rounded border border-border px-2 py-1.5 text-[11px] text-muted hover:text-negative"
+              className="min-h-10 rounded border border-border px-3 text-xs text-muted hover:text-negative"
             >
               Remove
             </button>
@@ -197,11 +249,12 @@ function ItemRow({ item }: { item: DayItemView }) {
                     <input
                       type="number"
                       min={0}
+                      inputMode="numeric"
                       value={form[k]}
                       onChange={(e) =>
                         setForm({ ...form, [k]: Number(e.target.value) })
                       }
-                      className="tnum rounded border border-border bg-background px-1 py-1 text-right text-xs"
+                      className="tnum min-h-10 w-full rounded border border-border bg-background px-1.5 text-right"
                     />
                   </label>
                 ))}
@@ -222,7 +275,7 @@ function ItemRow({ item }: { item: DayItemView }) {
                     }),
                   )
                 }
-                className="self-start rounded bg-accent px-2.5 py-1.5 text-[11px] font-medium text-accent-fg disabled:opacity-50"
+                className="min-h-10 self-start rounded bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
               >
                 Save correction
               </button>

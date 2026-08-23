@@ -63,7 +63,7 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-7 gap-1.5">
+      <div className="mt-3 grid grid-cols-7 gap-1 sm:gap-1.5">
         {WEEKDAYS.map((d, i) => (
           <div key={`${d}-${i}`} className="text-center text-[10px] text-muted">
             {d}
@@ -94,7 +94,7 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
 
           const inner = (
             <span
-              className={`grid aspect-square w-full place-items-center rounded-md text-[11px] tnum transition-transform ${cellClass} ${
+              className={`grid aspect-square w-full place-items-center rounded-md text-[11px] tnum transition-transform sm:text-xs ${cellClass} ${
                 day.score !== null && bucket(day.score) >= 3
                   ? "text-white"
                   : "text-foreground/80"
@@ -128,8 +128,15 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
         })}
       </div>
 
-      {/* Hover detail, in text tokens — never the series colour. */}
-      <div className="mt-3 min-h-[2.5rem] rounded-md bg-surface-raised px-3 py-2 text-xs">
+      {/*
+        Detail line, in text tokens — never the series colour.
+
+        On a phone there is no hover: tapping a cell navigates to the day. So
+        rather than a tooltip that touch users never see, this shows the most
+        recent day the pointer touched on desktop, and on mobile it explains the
+        tap. The per-day page is the real detail view on touch.
+      */}
+      <div className="mt-3 min-h-[2.75rem] rounded-md bg-surface-raised px-3 py-2 text-xs">
         {hovered ? (
           hovered.score === null ? (
             <span className="text-muted">
@@ -161,7 +168,8 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
           )
         ) : (
           <span className="text-muted">
-            Hover a day for detail. Click to open it.
+            <span className="hidden sm:inline">Hover a day for detail. Click to open it.</span>
+            <span className="sm:hidden">Tap any day to see what you ate.</span>
           </span>
         )}
       </div>

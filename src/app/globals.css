@@ -1,83 +1,95 @@
 @import "tailwindcss";
 
 /*
- * Semantic color tokens.
+ * Semantic colour tokens.
  *
- * Components reference these by role (bg-surface, text-muted, text-positive),
- * never raw palette values — that's what keeps light and dark consistent and
- * makes a palette change a one-file edit.
+ * A warm-neutral base (paper and ink) with a single muted sage accent. The
+ * restraint is deliberate: this app shows a lot of numbers, and saturated
+ * chrome competes with the data for attention.
  *
- * Light is defined on bare :root; dark only redefines the same names.
+ * Components reference these by role — bg-surface, text-muted, text-positive —
+ * never raw hex. Light is defined on bare :root; dark redefines the same names.
  */
 :root {
-  --background: #f7f8fa;
+  /* Paper */
+  --background: #f7f6f3;
   --surface: #ffffff;
-  --surface-raised: #f1f3f6;
-  --foreground: #10151c;
-  --muted: #667085;
-  --border: #e4e7ec;
-  --accent: #2f6f4f;
+  --surface-raised: #f0eee9;
+  --surface-sunken: #eae7e0;
+
+  /* Ink */
+  --foreground: #1c1b18;
+  --muted: #7a756c;
+  --border: #e3e0d9;
+  --border-strong: #d2cec5;
+
+  /* Accent — muted sage. Low chroma so it reads as considered, not branded. */
+  --accent: #55614f;
+  --accent-hover: #445039;
   --accent-fg: #ffffff;
+  --accent-soft: #eceee8;
 
-  /* Feedback */
-  --positive: #12805c;
-  --warning: #b26a00;
-  --negative: #c0392b;
+  /* Feedback. Desaturated to sit inside the neutral scheme. */
+  --positive: #4a6b52;
+  --warning: #8a6a33;
+  --negative: #9c4a3f;
 
-  /* Score bands for chips, where the number is always shown beside the colour —
-   * status colours are legal there because they never carry meaning alone. */
-  --score-none: #e4e7ec;
-  --score-poor: #d9534f;
-  --score-ok: #e0a030;
-  --score-good: #7fae4f;
-  --score-great: #2f8f5b;
+  /* Score bands, for chips where the number is always shown alongside —
+   * status colour never carries meaning on its own here. */
+  --score-none: #e3e0d9;
+  --score-poor: #9c4a3f;
+  --score-ok: #8a6a33;
+  --score-good: #6b7562;
+  --score-great: #3b4436;
 
   /* Sequential ramp for the month heatmap: ONE hue, light -> dark, encoding
-   * magnitude. Deliberately not the band colours above — a red-to-green rainbow
-   * across a grid is unreadable under colour-vision deficiency and implies
-   * category boundaries that a 0-100 score does not have.
-   *
-   * Validated with the dataviz ordinal checks (monotone lightness, adjacent
-   * dL >= 0.06, light end >= 2:1 on the surface, single hue): light end
-   * #7ebb99 clears 2.22:1 on white. Do not lighten step 1 — it fails below this. */
-  --heat-1: #7ebb99;
-  --heat-2: #5da37f;
-  --heat-3: #3f8763;
-  --heat-4: #2a6b4b;
-  --heat-5: #1c5038;
-  --heat-empty: #eef0f3;
+   * magnitude. Validated with the dataviz ordinal checks — monotone lightness,
+   * adjacent dL >= 0.06, light end 2.45:1 on white, hue spread 16 degrees.
+   * Do not lighten step 1: below this it fails the contrast floor. */
+  --heat-1: #a3a894;
+  --heat-2: #87907a;
+  --heat-3: #6b7562;
+  --heat-4: #525c4b;
+  --heat-5: #3b4436;
+  --heat-empty: #ebe8e1;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b0e13;
-    --surface: #141a22;
-    --surface-raised: #1c242e;
-    --foreground: #e8ecf1;
-    --muted: #93a0b0;
-    --border: #232c38;
-    --accent: #4ea87a;
-    --accent-fg: #06120c;
+    --background: #141412;
+    --surface: #1c1c1a;
+    --surface-raised: #262623;
+    --surface-sunken: #101010;
 
-    --positive: #35c691;
-    --warning: #e0a030;
-    --negative: #ff6b5e;
+    --foreground: #ebe9e4;
+    --muted: #9a958b;
+    --border: #302f2c;
+    --border-strong: #423f3a;
 
-    --score-none: #232c38;
-    --score-poor: #b8443f;
-    --score-ok: #b8801f;
-    --score-good: #5f8f3a;
-    --score-great: #35a76a;
+    --accent: #9aa88f;
+    --accent-hover: #aebaa3;
+    --accent-fg: #16170f;
+    --accent-soft: #24261f;
 
-    /* Dark ramp is SELECTED against the dark surface, not an inversion of the
-     * light one: light end #305c49 clears 2.29:1 on #141a22. Flipping the light
-     * ramp would put its palest step below the contrast floor. */
-    --heat-1: #305c49;
-    --heat-2: #3e7659;
-    --heat-3: #4d926f;
-    --heat-4: #5eae86;
-    --heat-5: #72c99c;
-    --heat-empty: #1b2229;
+    --positive: #86a88c;
+    --warning: #c39a52;
+    --negative: #cc7a6d;
+
+    --score-none: #302f2c;
+    --score-poor: #a05548;
+    --score-ok: #a07c38;
+    --score-good: #77816a;
+    --score-great: #abb49c;
+
+    /* Selected against the dark surface, not inverted from the light ramp:
+     * light end 2.10:1 on #1c1c1a. Flipping the light ramp would put its palest
+     * step under the floor. */
+    --heat-1: #4a5243;
+    --heat-2: #5e6853;
+    --heat-3: #77816a;
+    --heat-4: #909a82;
+    --heat-5: #abb49c;
+    --heat-empty: #232320;
   }
 }
 
@@ -85,11 +97,17 @@
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
 
   --color-positive: var(--positive);
   --color-warning: var(--warning);
@@ -114,6 +132,11 @@
     Monaco, Consolas, monospace;
 }
 
+html {
+  /* Stops iOS Safari inflating text in landscape. */
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -123,4 +146,29 @@ body {
 /* Figures line up in tables and stat rows without hand-tuning. */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Mobile input sizing.
+ *
+ * iOS Safari zooms the viewport whenever a focused input's font-size is under
+ * 16px — which is jarring and leaves the page scrolled sideways. Setting the
+ * floor here is more reliable than remembering it at every call site.
+ */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Respect a user's reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

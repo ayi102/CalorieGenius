@@ -48,6 +48,25 @@ function rescale(item: PreviewItem, nextGrams: number): PreviewItem {
   };
 }
 
+/**
+ * Set an item's portion by number of servings.
+ *
+ * Packaged food is labelled per serving, so asking for grams there is asking
+ * someone to weigh a cereal box. Fractional values matter: half a serving is
+ * common and rounding it to 1 would overstate the day by a real amount.
+ */
+function rescaleServings(item: PreviewItem, servings: number): PreviewItem {
+  if (!item.servingGrams || item.servingGrams <= 0) return item;
+  const next = rescale(item, item.servingGrams * servings);
+  return { ...next, quantity: servings, unit: "serving" };
+}
+
+/** Servings this item currently represents, given its label serving size. */
+function currentServings(item: PreviewItem): number {
+  if (!item.servingGrams || item.servingGrams <= 0) return item.quantity;
+  return item.grams / item.servingGrams;
+}
+
 export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -191,7 +210,7 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
             }}
           />
 
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-xs text-muted">When</span>
               <input
@@ -199,7 +218,7 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
                 name="eatenAt"
                 value={eatenAt}
                 onChange={(e) => setEatenAt(e.target.value)}
-                className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                className="min-h-11 rounded-md border border-border bg-background px-2 text-sm"
               />
             </label>
 
@@ -211,35 +230,37 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
                   value={restaurant}
                   onChange={(e) => setRestaurant(e.target.value)}
                   placeholder="Chipotle"
-                  className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  className="min-h-11 w-full rounded-md border border-border bg-background px-2 text-sm sm:w-auto"
                 />
               </label>
             ) : (
               <button
                 type="button"
                 onClick={() => setShowRestaurant(true)}
-                className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-foreground"
+                className="min-h-11 rounded-md border border-border px-3 text-sm text-muted hover:text-foreground"
               >
                 Ate out?
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setScanning(true)}
-              className="rounded-md border border-border px-3 py-1.5 text-sm text-muted hover:text-foreground"
-              title="Scan a packaged item's barcode — exact label nutrition, and it doesn't use a parse"
-            >
-              Scan barcode
-            </button>
+            <div className="flex gap-2 sm:ml-auto sm:contents">
+              <button
+                type="button"
+                onClick={() => setScanning(true)}
+                className="min-h-11 flex-1 rounded-md border border-border px-3 text-sm text-muted hover:text-foreground sm:flex-none"
+                title="Scan a packaged item's barcode — exact label nutrition, and it doesn't use a parse"
+              >
+                Scan
+              </button>
 
-            <button
-              type="submit"
-              disabled={analyzing || text.trim() === ""}
-              className="ml-auto rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
-            >
-              {analyzing ? "Reading…" : "Add"}
-            </button>
+              <button
+                type="submit"
+                disabled={analyzing || text.trim() === ""}
+                className="min-h-11 flex-[2] rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50 sm:ml-auto sm:flex-none"
+              >
+                {analyzing ? "Reading…" : "Add"}
+              </button>
+            </div>
           </div>
 
           <p className="text-xs text-muted">
@@ -274,52 +295,85 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
             {items.map((item, index) => {
               const badge = SOURCE_BADGE[item.nutritionSource] ?? SOURCE_BADGE.estimate;
               return (
-                <li key={index} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {item.name}
-                    {item.brand && <span className="text-muted"> · {item.brand}</span>}
-                  </span>
+                <li key={index} className="py-2.5">
+                  <div className="flex items-baseline gap-2">
+                    <span className="min-w-0 flex-1 text-sm">
+                      {item.name}
+                      {item.brand && <span className="text-muted"> · {item.brand}</span>}
+                    </span>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}
+                      title={item.provenance}
+                    >
+                      {badge.label}
+                    </span>
+                  </div>
 
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${badge.className}`}
-                    title={item.provenance}
-                  >
-                    {badge.label}
-                  </span>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    {/* Portion is editable because it is the biggest source of
+                        error in the whole pipeline. Scanned items are measured in
+                        servings (what the label states); typed items in grams. */}
+                    {item.servingGrams && item.servingGrams > 0 ? (
+                      <label className="flex items-center gap-1.5 text-xs text-muted">
+                        <input
+                          type="number"
+                          min={0.25}
+                          max={50}
+                          step={0.25}
+                          inputMode="decimal"
+                          value={Number(currentServings(item).toFixed(2))}
+                          onChange={(e) => {
+                            const next = Number(e.target.value);
+                            if (!Number.isFinite(next) || next <= 0) return;
+                            setItems((prev) =>
+                              prev.map((it, i) =>
+                                i === index ? rescaleServings(it, next) : it,
+                              ),
+                            );
+                          }}
+                          className="tnum min-h-9 w-20 rounded border border-border bg-background px-2 text-right"
+                          aria-label={`Servings of ${item.name}`}
+                        />
+                        <span>
+                          {currentServings(item) === 1 ? "serving" : "servings"}
+                          <span className="ml-1 opacity-70">
+                            ({Math.round(item.servingGrams)} g each)
+                          </span>
+                        </span>
+                      </label>
+                    ) : (
+                      <label className="flex items-center gap-1 text-xs text-muted">
+                        <input
+                          type="number"
+                          min={1}
+                          max={5000}
+                          inputMode="numeric"
+                          value={Math.round(item.grams)}
+                          onChange={(e) => {
+                            const next = Number(e.target.value);
+                            if (!Number.isFinite(next)) return;
+                            setItems((prev) =>
+                              prev.map((it, i) => (i === index ? rescale(it, next) : it)),
+                            );
+                          }}
+                          className="tnum min-h-9 w-20 rounded border border-border bg-background px-2 text-right"
+                          aria-label={`Grams of ${item.name}`}
+                        />
+                        g
+                      </label>
+                    )}
 
-                  {/* Grams is editable because portion size is the biggest
-                      source of error in the whole pipeline. */}
-                  <label className="flex items-center gap-1 text-xs text-muted">
-                    <input
-                      type="number"
-                      min={1}
-                      max={5000}
-                      value={Math.round(item.grams)}
-                      onChange={(e) => {
-                        const next = Number(e.target.value);
-                        if (!Number.isFinite(next)) return;
-                        setItems((prev) =>
-                          prev.map((it, i) => (i === index ? rescale(it, next) : it)),
-                        );
-                      }}
-                      className="tnum w-16 rounded border border-border bg-background px-1.5 py-1 text-right text-xs"
-                      aria-label={`Grams of ${item.name}`}
-                    />
-                    g
-                  </label>
+                    <span className="tnum text-sm">{Math.round(item.kcal)} kcal</span>
 
-                  <span className="tnum w-20 text-right text-sm">
-                    {Math.round(item.kcal)} kcal
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
-                    className="text-xs text-muted hover:text-negative"
-                    aria-label={`Remove ${item.name}`}
-                  >
-                    remove
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                      className="ml-auto min-h-9 px-2 text-xs text-muted hover:text-negative"
+                      aria-label={`Remove ${item.name}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </li>
               );
             })}
@@ -338,29 +392,31 @@ export function EntryBox({ parsesRemaining }: { parsesRemaining: number }) {
             </p>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
             <button
               type="button"
               onClick={onSave}
               disabled={saving || items.length === 0}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+              className="min-h-12 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50 sm:min-h-11"
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? "Saving…" : `Save ${items.length} item${items.length === 1 ? "" : "s"}`}
             </button>
-            <button
-              type="button"
-              onClick={() => setScanning(true)}
-              className="rounded-md border border-border px-3 py-2 text-sm text-muted hover:text-foreground"
-            >
-              Scan another
-            </button>
-            <button
-              type="button"
-              onClick={onDiscard}
-              className="rounded-md border border-border px-3 py-2 text-sm text-muted hover:text-foreground"
-            >
-              Discard
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setScanning(true)}
+                className="min-h-11 flex-1 rounded-md border border-border px-3 text-sm text-muted hover:text-foreground sm:flex-none"
+              >
+                Scan another
+              </button>
+              <button
+                type="button"
+                onClick={onDiscard}
+                className="min-h-11 flex-1 rounded-md border border-border px-3 text-sm text-muted hover:text-foreground sm:flex-none"
+              >
+                Discard
+              </button>
+            </div>
             {error && <span className="text-sm text-negative">{error}</span>}
           </div>
         </div>

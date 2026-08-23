@@ -241,6 +241,13 @@ export interface PreviewItem {
   quantity: number;
   unit: string;
   grams: number;
+  /**
+   * Grams in ONE serving, when the source declares a serving size (barcode
+   * labels do). Lets the UI ask for servings — which is how packaged food is
+   * actually measured — instead of making someone weigh a cereal box.
+   * Null for foods with no meaningful serving unit.
+   */
+  servingGrams: number | null;
   kcal: number;
   protein: number;
   carbs: number;
@@ -320,6 +327,8 @@ export async function analyzeEntry(form: FormData): Promise<AnalyzeResult> {
         quantity: i.quantity,
         unit: i.unit,
         grams: i.grams,
+        // Only barcode lookups carry a declared serving size.
+        servingGrams: null,
         kcal: i.nutrition.kcal,
         protein: i.nutrition.protein,
         carbs: i.nutrition.carbs,
@@ -512,6 +521,60 @@ export async function updateItemGrams(
       sugar: item.sugar === null ? null : item.sugar * f,
       sodium: item.sodium === null ? null : item.sodium * f,
       // The user has now vouched for this portion, so it stops being a guess.
+      nutritionSource: "user",
+      confidence: 1,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/**
+ * Change a saved item's portion by number of SERVINGS.
+ *
+ * Only meaningful for items that were logged with a serving unit (barcode
+ * scans), where per-serving grams is recoverable as grams / quantity. Fractional
+ * servings are the point — half a serving is a normal thing to eat.
+ */
+export async function updateItemServings(
+  itemId: string,
+  servings: number,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Number.isFinite(servings) || servings <= 0 || servings > 50) {
+    return { ok: false, error: "Enter between 0.25 and 50 servings." };
+  }
+
+  const item = await prisma.entryItem.findFirst({
+    where: { id: itemId, entry: { userId: user.userId } },
+  });
+  if (!item) return { ok: false, error: "Item not found." };
+
+  if (item.quantity <= 0 || item.grams <= 0) {
+    return { ok: false, error: "That item has no serving size to scale." };
+  }
+
+  // Recover the label's serving weight from what was stored, then rebuild.
+  const gramsPerServing = item.grams / item.quantity;
+  const nextGrams = gramsPerServing * servings;
+  const f = nextGrams / item.grams;
+
+  await prisma.entryItem.update({
+    where: { id: item.id },
+    data: {
+      quantity: servings,
+      grams: nextGrams,
+      kcal: item.kcal * f,
+      protein: item.protein * f,
+      carbs: item.carbs * f,
+      fat: item.fat * f,
+      fiber: item.fiber === null ? null : item.fiber * f,
+      sugar: item.sugar === null ? null : item.sugar * f,
+      sodium: item.sodium === null ? null : item.sodium * f,
       nutritionSource: "user",
       confidence: 1,
     },
@@ -724,6 +787,7 @@ export async function scanBarcode(barcode: string): Promise<BarcodeResult> {
         quantity: 1,
         unit: "serving",
         grams,
+        servingGrams: cached.defaultGrams,
         kcal: cached.kcalPer100g * f,
         protein: cached.proteinPer100g * f,
         carbs: cached.carbsPer100g * f,
@@ -825,6 +889,7 @@ export async function scanBarcode(barcode: string): Promise<BarcodeResult> {
         quantity: 1,
         unit: "serving",
         grams,
+        servingGrams: grams,
         kcal: per100g.kcal * f,
         protein: per100g.protein * f,
         carbs: per100g.carbs * f,

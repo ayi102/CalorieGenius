@@ -60,3 +60,6 @@ next-env.d.ts
 # ones (this project is developed with Claude Code); the others are noise.
 /.windsurf/
 /.agents/
+
+# Paste-ready production env for Vercel. Contains live secrets — never commit.
+vercel-env.txt

@@ -49,26 +49,26 @@ export function FoodGroupChart({
       <h2 className="text-sm font-semibold">Calories by food group</h2>
       <ul className="mt-3 flex flex-col gap-2">
         {groups.map((g) => (
-          <li key={g.group} className="flex items-center gap-3 text-xs">
-            <span className="w-24 shrink-0 truncate text-muted">
-              {GROUP_LABEL[g.group] ?? g.group}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span
-                // 4px rounded data-end, anchored to the baseline; a minimum width
-                // keeps a tiny value from vanishing entirely.
-                className="block h-3 rounded-r bg-heat-3"
-                style={{ width: `${Math.max(2, (g.kcal / max) * 100)}%` }}
-                role="img"
-                aria-label={`${GROUP_LABEL[g.group]}: ${g.kcal} kcal, ${Math.round(g.share * 100)}%`}
-              />
-            </span>
-            <span className="tnum w-24 shrink-0 text-right text-muted">
-              {g.kcal.toLocaleString()} kcal
-              <span className="ml-1 opacity-70">
-                {Math.round(g.share * 100)}%
+          <li key={g.group} className="text-xs">
+            {/* Label and figure share a line above the bar on narrow screens —
+                three fixed columns left the bar a few pixels wide on a phone. */}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate">{GROUP_LABEL[g.group] ?? g.group}</span>
+              <span className="tnum shrink-0 text-muted">
+                {g.kcal.toLocaleString()}
+                <span className="ml-1 opacity-70">
+                  {Math.round(g.share * 100)}%
+                </span>
               </span>
-            </span>
+            </div>
+            <span
+              // 4px rounded data-end anchored to the baseline; a floor width
+              // keeps a tiny value from vanishing entirely.
+              className="mt-1 block h-2.5 rounded-r bg-heat-3"
+              style={{ width: `${Math.max(2, (g.kcal / max) * 100)}%` }}
+              role="img"
+              aria-label={`${GROUP_LABEL[g.group]}: ${g.kcal} kcal, ${Math.round(g.share * 100)}%`}
+            />
           </li>
         ))}
       </ul>
