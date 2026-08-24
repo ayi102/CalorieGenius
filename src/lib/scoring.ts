@@ -205,6 +205,8 @@ export interface DayScore {
     protein: number;
     carbs: number;
     fat: number;
+    /** Tracked for the meal score; surfaced on the day view too. */
+    fiber: number;
     mealCount: number;
   };
 }
@@ -415,6 +417,7 @@ export function computeDayScore(input: DayScoreInput): DayScore | null {
   const protein = items.reduce((s, i) => s + i.protein, 0);
   const carbs = items.reduce((s, i) => s + i.carbs, 0);
   const fat = items.reduce((s, i) => s + i.fat, 0);
+  const fiber = items.reduce((s, i) => s + (i.fiber ?? 0), 0);
 
   const components = [
     scoreCalories(kcal, targets.kcal, goal),
@@ -433,6 +436,7 @@ export function computeDayScore(input: DayScoreInput): DayScore | null {
       protein: Math.round(protein),
       carbs: Math.round(carbs),
       fat: Math.round(fat),
+      fiber: Math.round(fiber),
       mealCount: meals.length,
     },
   };

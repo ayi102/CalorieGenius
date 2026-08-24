@@ -32,7 +32,7 @@ import {
 } from "@/lib/time";
 import type { NutritionSource } from "@/lib/nutrition/ground";
 import type { FoodGroup } from "@/lib/nutrition/types";
-import type { UnitSystem } from "@/lib/units";
+import { waterTarget, type UnitSystem } from "@/lib/units";
 
 export interface ProfileView {
   userId: string;
@@ -52,6 +52,7 @@ export interface ProfileView {
   eatingWindowEnabled: boolean;
   eatingWindowStart: number;
   eatingWindowEnd: number;
+  waterTargetMl: number | null;
 }
 
 /** The signed-in user's profile, or null if it has been deleted mid-session. */
@@ -76,6 +77,7 @@ export async function getProfile(userId: string): Promise<ProfileView | null> {
     eatingWindowEnabled: p.eatingWindowEnabled,
     eatingWindowStart: p.eatingWindowStart,
     eatingWindowEnd: p.eatingWindowEnd,
+    waterTargetMl: p.waterTargetMl,
   };
 }
 
@@ -573,4 +575,69 @@ export async function getRememberedFoods(
     kcalForDefault: Math.round((f.kcalPer100g * f.defaultGrams) / 100),
     timesLogged: f.timesLogged,
   }));
+}
+
+
+// ---------------------------------------------------------------------------
+// Water
+// ---------------------------------------------------------------------------
+
+export interface WaterLogView {
+  id: string;
+  drankAt: Date;
+  localMinutes: number;
+  ml: number;
+}
+
+export interface WaterDay {
+  totalMl: number;
+  targetMl: number;
+  logs: WaterLogView[];
+}
+
+/**
+ * One local day's water, against the user's goal.
+ *
+ * Ranges over the same denormalized `localDate` column the food views use, so a
+ * drink at 11pm counts toward the right day.
+ */
+export async function getWaterForDay(
+  userId: string,
+  date: IsoDate,
+  timezone: string,
+  weightKg: number | null,
+  overrideMl: number | null,
+): Promise<WaterDay> {
+  const rows = await prisma.waterLog.findMany({
+    where: { userId, localDate: isoDateToUtc(date) },
+    orderBy: { drankAt: "asc" },
+  });
+
+  return {
+    totalMl: rows.reduce((s, r) => s + r.ml, 0),
+    targetMl: waterTarget(weightKg, overrideMl),
+    logs: rows.map((r) => ({
+      id: r.id,
+      drankAt: r.drankAt,
+      localMinutes: toLocalMinutes(r.drankAt, timezone),
+      ml: r.ml,
+    })),
+  };
+}
+
+/** Daily water totals across a month, for the month view. */
+export async function getWaterForMonth(
+  userId: string,
+  monthAnchor: IsoDate,
+): Promise<Map<IsoDate, number>> {
+  const { start, end } = monthBounds(monthAnchor);
+  const rows = await prisma.waterLog.groupBy({
+    by: ["localDate"],
+    where: { userId, localDate: { gte: start, lte: end } },
+    _sum: { ml: true },
+  });
+
+  const out = new Map<IsoDate, number>();
+  for (const r of rows) out.set(utcToIsoDate(r.localDate), r._sum.ml ?? 0);
+  return out;
 }

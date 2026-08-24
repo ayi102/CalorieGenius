@@ -132,9 +132,15 @@ model Profile {
   eatingWindowStart   Int     @default(720) // 12:00
   eatingWindowEnd     Int     @default(1200) // 20:00
 
+  /// Daily water goal in MILLILITRES. Stored metric for the same reason body
+  /// metrics are: one canonical unit internally, converted at the UI boundary.
+  /// Null means "derive it from bodyweight" (35 ml per kg).
+  waterTargetMl Int?
+
   entries    Entry[]
   foodItems  FoodItem[]
   parseUsage ParseUsage[]
+  waterLogs  WaterLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -309,4 +315,30 @@ model ParseUsage {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, localDate])
+}
+
+
+/// A drink of water.
+///
+/// Separate rows rather than a running daily total so a mis-tap can be removed
+/// and the day still adds up, and so "when did I actually drink" stays
+/// answerable later.
+model WaterLog {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  drankAt DateTime @db.Timestamptz(3)
+
+  /// Same denormalization as Entry.localDate: the user's local calendar day,
+  /// computed at write time so day and month reads are an index range scan.
+  localDate DateTime @db.Date
+
+  /// Millilitres. Imperial users see fluid ounces; the conversion happens in the
+  /// UI, never in storage.
+  ml Int
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, localDate])
 }

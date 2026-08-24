@@ -5,6 +5,7 @@ import {
   getProfile,
   getRememberedFoods,
   getRememberedMeals,
+  getWaterForDay,
   targetsForProfile,
 } from "@/lib/queries";
 import { env } from "@/lib/env";
@@ -16,6 +17,7 @@ import { Remembered } from "./remembered";
 import { DaySummary } from "./day-summary";
 import { Tabs } from "./tabs";
 import { InstallHint } from "./install-hint";
+import { Water } from "./water";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +29,7 @@ export default async function TodayPage() {
   const targets = targetsForProfile(profile);
   const today = todayIso(profile.timezone);
 
-  const [day, usage, rememberedMeals, rememberedFoods] = await Promise.all([
+  const [day, usage, rememberedMeals, rememberedFoods, water] = await Promise.all([
     getDay(
       user.userId,
       today,
@@ -42,6 +44,13 @@ export default async function TodayPage() {
     getParseUsage(user.userId, today),
     getRememberedMeals(user.userId),
     getRememberedFoods(user.userId),
+    getWaterForDay(
+      user.userId,
+      today,
+      profile.timezone,
+      profile.weightKg,
+      profile.waterTargetMl,
+    ),
   ]);
 
   const remaining = Math.max(0, env.dailyParseLimit() - usage.used);
@@ -107,6 +116,12 @@ export default async function TodayPage() {
               ),
           },
           {
+            id: "water",
+            label: "Water",
+            badge: `${Math.round((water.totalMl / water.targetMl) * 100)}%`,
+            content: <Water water={water} units={profile.unitSystem} />,
+          },
+          {
             id: "score",
             label: "Score",
             badge: day.score ? String(day.score.total) : undefined,
@@ -116,11 +131,12 @@ export default async function TodayPage() {
                 {macros && (
                   <div className="card p-4">
                     <h2 className="text-sm font-semibold">Macros</h2>
-                    <dl className="mt-3 grid grid-cols-3 gap-3">
+                    <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                       {[
                         { label: "Protein", value: macros.protein },
                         { label: "Carbs", value: macros.carbs },
                         { label: "Fat", value: macros.fat },
+                        { label: "Fiber", value: macros.fiber },
                       ].map((m) => (
                         <div key={m.label}>
                           <dt className="text-xs text-muted">{m.label}</dt>

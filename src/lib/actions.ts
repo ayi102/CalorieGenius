@@ -191,6 +191,12 @@ export async function updateProfile(form: FormData): Promise<ActionResult> {
           max: 1439,
           integer: true,
         }) ?? undefined,
+      // Blank clears the override, which returns the goal to 35 ml/kg.
+      waterTargetMl: optionalNumber(form, "waterTargetMl", {
+        min: 250,
+        max: 8000,
+        integer: true,
+      }),
     },
   });
 
@@ -1086,5 +1092,76 @@ export async function quickAddFood(
   revalidatePath("/");
   revalidatePath("/month");
   revalidatePath("/insights");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Water
+// ---------------------------------------------------------------------------
+
+/**
+ * Log a drink of water.
+ *
+ * `ml` rather than a preset id so a custom amount needs no special case, and the
+ * stored unit stays metric regardless of what the user sees.
+ */
+export async function addWater(
+  ml: number,
+  drankAtIso?: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const amount = Math.round(ml);
+  // A 4-litre single entry is almost certainly a typo, and silently storing it
+  // would quietly ruin the day's total.
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 4000) {
+    return { ok: false, error: "Enter an amount between 1 ml and 4 litres." };
+  }
+
+  const drankAt = drankAtIso ? new Date(drankAtIso) : new Date();
+  if (Number.isNaN(drankAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  await prisma.waterLog.create({
+    data: {
+      userId: user.userId,
+      drankAt,
+      localDate: toLocalDate(drankAt, user.timezone),
+      ml: amount,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  return { ok: true };
+}
+
+/** Remove a logged drink — scoped by userId in the same statement. */
+export async function removeWater(id: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const result = await prisma.waterLog.deleteMany({
+    where: { id, userId: user.userId },
+  });
+  if (result.count === 0) return { ok: false, error: "Not found." };
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  return { ok: true };
+}
+
+/** Undo the most recent drink of the day — the common correction after a mis-tap. */
+export async function undoLastWater(): Promise<ActionResult> {
+  const user = await requireUser();
+  const last = await prisma.waterLog.findFirst({
+    where: { userId: user.userId },
+    orderBy: { drankAt: "desc" },
+    select: { id: true },
+  });
+  if (!last) return { ok: false, error: "Nothing to undo." };
+
+  await prisma.waterLog.delete({ where: { id: last.id } });
+  revalidatePath("/");
+  revalidatePath("/month");
   return { ok: true };
 }

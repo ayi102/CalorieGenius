@@ -7,6 +7,11 @@ import type { Targets } from "@/lib/scoring";
 import { formatLocalMinutes, windowLength } from "@/lib/time";
 import { ThemeToggle } from "../theme-toggle";
 import {
+  formatVolume,
+  mlToFlOz,
+  flOzToMl,
+  waterTarget,
+  volumeUnitLabel,
   BOUNDS,
   cmToFeetInches,
   kgToLb,
@@ -343,6 +348,61 @@ export function SettingsForm({
         )}
         <input type="hidden" name="eatingWindowStart" value={winStart} />
         <input type="hidden" name="eatingWindowEnd" value={winEnd} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold">Water</h2>
+        <Field
+          label={`Daily goal (${volumeUnitLabel(profile.unitSystem)})`}
+          hint={`Leave blank for 35 ml per kg of bodyweight — currently ${formatVolume(
+            waterTarget(profile.weightKg, null),
+            profile.unitSystem,
+          )}.`}
+        >
+          <input
+            type="number"
+            name="waterTargetDisplay"
+            min={profile.unitSystem === "imperial" ? 8 : 250}
+            max={profile.unitSystem === "imperial" ? 270 : 8000}
+            step="any"
+            defaultValue={
+              profile.waterTargetMl === null
+                ? ""
+                : profile.unitSystem === "imperial"
+                  ? Math.round(mlToFlOz(profile.waterTargetMl))
+                  : profile.waterTargetMl
+            }
+            placeholder={String(
+              profile.unitSystem === "imperial"
+                ? Math.round(mlToFlOz(waterTarget(profile.weightKg, null)))
+                : waterTarget(profile.weightKg, null),
+            )}
+            className={inputClass}
+            onChange={(e) => {
+              // Storage is millilitres regardless of what is displayed; keep the
+              // hidden canonical field in step.
+              const hidden = e.currentTarget.form?.elements.namedItem(
+                "waterTargetMl",
+              ) as HTMLInputElement | null;
+              if (!hidden) return;
+              const raw = e.currentTarget.value.trim();
+              if (raw === "") {
+                hidden.value = "";
+                return;
+              }
+              const n = Number(raw);
+              if (!Number.isFinite(n)) return;
+              hidden.value = String(
+                Math.round(profile.unitSystem === "imperial" ? flOzToMl(n) : n),
+              );
+            }}
+          />
+        </Field>
+        <input
+          type="hidden"
+          name="waterTargetMl"
+          defaultValue={profile.waterTargetMl ?? ""}
+        />
       </section>
 
       <section className="flex flex-col gap-3">

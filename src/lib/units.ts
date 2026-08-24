@@ -92,3 +92,68 @@ export const BOUNDS = {
   feet: { min: 1, max: 8 },
   inches: { min: 0, max: 11 },
 } as const;
+
+// --- Volume -----------------------------------------------------------------
+
+/** US customary fluid ounce. Not the imperial fl oz, which is ~28.41 ml. */
+const ML_PER_FL_OZ = 29.5735295625;
+
+export function mlToFlOz(ml: number): number {
+  return ml / ML_PER_FL_OZ;
+}
+
+export function flOzToMl(flOz: number): number {
+  return flOz * ML_PER_FL_OZ;
+}
+
+/**
+ * Quick-add sizes, chosen to match containers people actually drink from
+ * rather than round numbers.
+ *
+ * Imperial: a glass, a standard bottle (the 16.9 fl oz / 500 ml one), and a
+ * large bottle. Metric: the same volumes expressed how a metric user thinks of
+ * them.
+ */
+export const WATER_PRESETS: Record<
+  UnitSystem,
+  { label: string; ml: number }[]
+> = {
+  imperial: [
+    { label: "8 oz", ml: 237 },
+    { label: "12 oz", ml: 355 },
+    { label: "16.9 oz", ml: 500 },
+    { label: "1 L", ml: 1000 },
+  ],
+  metric: [
+    { label: "250 ml", ml: 250 },
+    { label: "330 ml", ml: 330 },
+    { label: "500 ml", ml: 500 },
+    { label: "1 L", ml: 1000 },
+  ],
+};
+
+/** Format a stored millilitre value for display, e.g. "68 oz" or "2.0 L". */
+export function formatVolume(ml: number, system: UnitSystem): string {
+  if (system === "imperial") return `${Math.round(mlToFlOz(ml))} oz`;
+  return ml >= 1000 ? `${(ml / 1000).toFixed(1)} L` : `${Math.round(ml)} ml`;
+}
+
+export function volumeUnitLabel(system: UnitSystem): string {
+  return system === "imperial" ? "oz" : "ml";
+}
+
+/**
+ * Daily water goal.
+ *
+ * 35 ml per kg of bodyweight is the common clinical rule of thumb, which is why
+ * it scales with the profile rather than being a flat "8 glasses". Falls back to
+ * 2500 ml when weight is unknown, and an explicit target always wins.
+ */
+export function waterTarget(
+  weightKg: number | null,
+  overrideMl: number | null,
+): number {
+  if (overrideMl && overrideMl > 0) return overrideMl;
+  if (weightKg && weightKg > 0) return Math.round((weightKg * 35) / 50) * 50;
+  return 2500;
+}

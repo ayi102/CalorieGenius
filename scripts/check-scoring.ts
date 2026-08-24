@@ -24,6 +24,10 @@ import {
   formatWeight,
   kgToLb,
   lbToKg,
+  flOzToMl,
+  formatVolume,
+  mlToFlOz,
+  waterTarget,
 } from "../src/lib/units";
 
 let failures = 0;
@@ -595,6 +599,24 @@ check(
 const noWindow = dayWith([480, 780, 1020, 1140], null);
 check("no window keeps the old label", noWindow.components.find((c) => c.key === "timing")!.label, "Meal timing");
 check("no window still scores 15 for a clean day", noWindow.components.find((c) => c.key === "timing")!.earned, 15);
+
+section("water");
+
+// US customary fl oz (29.5735 ml), NOT the imperial one (28.41) — a 4% error
+// across a day's intake is about 3 oz, which is visible on a progress bar.
+check("8 oz -> ml", Math.round(flOzToMl(8)), 237);
+check("500 ml -> oz", Math.round(mlToFlOz(500)), 17);
+check("round-trips at 64 oz", Math.round(mlToFlOz(flOzToMl(64))), 64);
+
+check("formats imperial", formatVolume(2000, "imperial"), "68 oz");
+check("formats metric litres", formatVolume(2000, "metric"), "2.0 L");
+check("formats metric millilitres", formatVolume(750, "metric"), "750 ml");
+
+// 35 ml/kg, rounded to the nearest 50 so the goal reads as a round number.
+check("target scales with bodyweight", waterTarget(70, null), 2450);
+check("target for a heavier person", waterTarget(90, null), 3150);
+check("explicit override wins", waterTarget(70, 3000), 3000);
+check("falls back without a weight", waterTarget(null, null), 2500);
 
 // ---------------------------------------------------------------------------
 console.log(`\n${checks - failures}/${checks} checks passed.`);
