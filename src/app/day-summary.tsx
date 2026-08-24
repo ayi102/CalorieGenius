@@ -1,5 +1,6 @@
 import type { DayScore } from "@/lib/scoring";
 import { scoreBand } from "@/lib/scoring";
+import { formatVolume, type UnitSystem } from "@/lib/units";
 
 const BAND_CLASS: Record<string, string> = {
   none: "text-muted",
@@ -19,9 +20,15 @@ const BAND_CLASS: Record<string, string> = {
 export function DaySummary({
   score,
   targets,
+  waterMl,
+  waterTargetMl,
+  units,
 }: {
   score: DayScore | null;
   targets: { kcal: number; protein: number };
+  waterMl: number;
+  waterTargetMl: number;
+  units: UnitSystem;
 }) {
   const kcal = score?.totals.kcal ?? 0;
   const protein = score?.totals.protein ?? 0;
@@ -68,6 +75,32 @@ export function DaySummary({
           aria-label={`${kcal} of ${targets.kcal} calories`}
         />
       </div>
+
+      {/* The rest of the day's tallies, at a glance — protein is above, so this
+          row carries what the tabs would otherwise hide. */}
+      <dl className="mt-4 grid grid-cols-3 gap-3 border-t border-border pt-3">
+        <div>
+          <dt className="text-xs text-muted">Carbs</dt>
+          <dd className="tnum mt-0.5 text-sm font-medium">
+            {score?.totals.carbs ?? 0} g
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">Fiber</dt>
+          <dd className="tnum mt-0.5 text-sm font-medium">
+            {score?.totals.fiber ?? 0} g
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">Water</dt>
+          <dd className="tnum mt-0.5 text-sm font-medium">
+            {formatVolume(waterMl, units)}
+            <span className="ml-1 font-normal text-muted">
+              / {formatVolume(waterTargetMl, units)}
+            </span>
+          </dd>
+        </div>
+      </dl>
     </section>
   );
 }

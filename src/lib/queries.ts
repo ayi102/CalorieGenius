@@ -641,3 +641,98 @@ export async function getWaterForMonth(
   for (const r of rows) out.set(utcToIsoDate(r.localDate), r._sum.ml ?? 0);
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Weight
+// ---------------------------------------------------------------------------
+
+export interface WeightPoint {
+  date: IsoDate;
+  weightKg: number;
+}
+
+export interface WeightHistory {
+  points: WeightPoint[];
+  latest: WeightPoint | null;
+  /** Change over the window, in kg. Negative is loss. */
+  changeKg: number | null;
+  /** Change over the last 7 days, for the "this week" line. */
+  weekChangeKg: number | null;
+}
+
+/**
+ * Weigh-ins over a window, oldest first.
+ *
+ * Returns a change only when there are at least two points — a single weigh-in
+ * has no trend, and showing "0.0 kg change" would imply one.
+ */
+export async function getWeightHistory(
+  userId: string,
+  days = 90,
+): Promise<WeightHistory> {
+  const rows = await prisma.weightLog.findMany({
+    where: { userId },
+    orderBy: { localDate: "asc" },
+    take: 400,
+  });
+
+  const points = rows.map((r) => ({
+    date: utcToIsoDate(r.localDate),
+    weightKg: r.weightKg,
+  }));
+
+  if (points.length === 0) {
+    return { points, latest: null, changeKg: null, weekChangeKg: null };
+  }
+
+  const latest = points[points.length - 1];
+
+  const cutoff = new Date(isoDateToUtc(latest.date));
+  cutoff.setUTCDate(cutoff.getUTCDate() - days);
+  const inWindow = points.filter((p) => isoDateToUtc(p.date) >= cutoff);
+
+  const weekCutoff = new Date(isoDateToUtc(latest.date));
+  weekCutoff.setUTCDate(weekCutoff.getUTCDate() - 7);
+  const inWeek = points.filter((p) => isoDateToUtc(p.date) >= weekCutoff);
+
+  return {
+    points: inWindow,
+    latest,
+    changeKg:
+      inWindow.length >= 2 ? latest.weightKg - inWindow[0].weightKg : null,
+    weekChangeKg:
+      inWeek.length >= 2 ? latest.weightKg - inWeek[0].weightKg : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Insights
+// ---------------------------------------------------------------------------
+
+/** A cached weekly report, if one exists for that week. */
+export async function getInsight(
+  userId: string,
+  periodStart: IsoDate,
+): Promise<{ report: unknown; generatedAt: Date; model: string } | null> {
+  const row = await prisma.insight.findUnique({
+    where: { userId_periodStart: { userId, periodStart: isoDateToUtc(periodStart) } },
+  });
+  if (!row) return null;
+  return { report: row.content, generatedAt: row.generatedAt, model: row.model };
+}
+
+/** How many days in a window have any entries — gates the "generate" button. */
+export async function countTrackedDays(
+  userId: string,
+  periodStart: IsoDate,
+  periodEnd: IsoDate,
+): Promise<number> {
+  const rows = await prisma.entry.groupBy({
+    by: ["localDate"],
+    where: {
+      userId,
+      localDate: { gte: isoDateToUtc(periodStart), lte: isoDateToUtc(periodEnd) },
+    },
+  });
+  return rows.length;
+}

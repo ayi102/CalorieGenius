@@ -106,6 +106,10 @@ model Profile {
   unitSystem UnitSystem @default(imperial)
 
   // --- Body metrics, ALWAYS stored metric (cm / kg) ---
+  //
+  // `weightKg` is the CURRENT weight and the one targets are computed from.
+  // History lives in WeightLog; logging a new weight updates both, so there is
+  // one answer to "what do I weigh" rather than two that can disagree.
   sex           Sex?
   birthDate     DateTime?     @db.Date
   heightCm      Float?
@@ -141,6 +145,8 @@ model Profile {
   foodItems  FoodItem[]
   parseUsage ParseUsage[]
   waterLogs  WaterLog[]
+  weightLogs WeightLog[]
+  insights   Insight[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -341,4 +347,55 @@ model WaterLog {
   createdAt DateTime @default(now())
 
   @@index([userId, localDate])
+}
+
+
+/// A weigh-in.
+///
+/// Separate from Profile.weightKg so progress is visible over time. One row per
+/// local day (logging twice replaces), because weight fluctuates hourly and a
+/// day is the smallest interval where the number means anything.
+model WeightLog {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  /// The user's local calendar day, same denormalization as Entry.localDate.
+  localDate DateTime @db.Date
+
+  /// Kilograms. Imperial users see pounds; conversion happens in the UI.
+  weightKg Float
+
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, localDate])
+  @@index([userId, localDate])
+}
+
+/// A cached weekly insight report.
+///
+/// Generated on demand at most once per period and stored, because it costs a
+/// model call: regenerating on every page view would be both slow and wasteful,
+/// and the underlying week does not change once it has passed.
+model Insight {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  /// Inclusive local-date bounds of the week this report covers.
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+
+  /// The validated InsightReport JSON.
+  content Json
+
+  /// Which model wrote it, so a model change can invalidate selectively.
+  model       String
+  generatedAt DateTime @default(now())
+
+  @@unique([userId, periodStart])
+  @@index([userId, periodStart])
 }

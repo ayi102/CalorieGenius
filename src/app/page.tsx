@@ -6,6 +6,7 @@ import {
   getRememberedFoods,
   getRememberedMeals,
   getWaterForDay,
+  getWeightHistory,
   targetsForProfile,
 } from "@/lib/queries";
 import { env } from "@/lib/env";
@@ -18,6 +19,7 @@ import { DaySummary } from "./day-summary";
 import { Tabs } from "./tabs";
 import { InstallHint } from "./install-hint";
 import { Water } from "./water";
+import { Weight } from "./weight";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,8 @@ export default async function TodayPage() {
   const targets = targetsForProfile(profile);
   const today = todayIso(profile.timezone);
 
-  const [day, usage, rememberedMeals, rememberedFoods, water] = await Promise.all([
+  const [day, usage, rememberedMeals, rememberedFoods, water, weight] =
+    await Promise.all([
     getDay(
       user.userId,
       today,
@@ -51,6 +54,7 @@ export default async function TodayPage() {
       profile.weightKg,
       profile.waterTargetMl,
     ),
+    getWeightHistory(user.userId),
   ]);
 
   const remaining = Math.max(0, env.dailyParseLimit() - usage.used);
@@ -71,7 +75,13 @@ export default async function TodayPage() {
       </header>
 
       {/* Always visible: hiding today's total behind a tab would defeat the app. */}
-      <DaySummary score={day.score} targets={targets} />
+      <DaySummary
+        score={day.score}
+        targets={targets}
+        waterMl={water.totalMl}
+        waterTargetMl={water.targetMl}
+        units={profile.unitSystem}
+      />
 
       {/* Hides itself once installed, or once dismissed. */}
       <InstallHint />
@@ -116,10 +126,19 @@ export default async function TodayPage() {
               ),
           },
           {
-            id: "water",
-            label: "Water",
+            id: "body",
+            label: "Body",
             badge: `${Math.round((water.totalMl / water.targetMl) * 100)}%`,
-            content: <Water water={water} units={profile.unitSystem} />,
+            content: (
+              <div className="flex flex-col gap-4">
+                <Water water={water} units={profile.unitSystem} />
+                <Weight
+                  history={weight}
+                  units={profile.unitSystem}
+                  goal={profile.goal}
+                />
+              </div>
+            ),
           },
           {
             id: "score",

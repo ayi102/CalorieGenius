@@ -22,6 +22,11 @@ import { resolveEntry, ParseLimitError } from "@/lib/nutrition/resolve";
 import { guessMealType, toLocalDate } from "@/lib/time";
 import { feetInchesToCm, lbToKg, type UnitSystem } from "@/lib/units";
 import { normalizeFoodName } from "@/lib/nutrition/normalize";
+import { computeTargets, ageFrom } from "@/lib/scoring";
+import {
+  generateWeeklyInsight,
+  NotEnoughDataError,
+} from "@/lib/insights/generate";
 import { lookupBarcode } from "@/lib/nutrition/off";
 import { searchUsdaByBarcode } from "@/lib/nutrition/usda";
 
@@ -1163,5 +1168,155 @@ export async function undoLastWater(): Promise<ActionResult> {
   await prisma.waterLog.delete({ where: { id: last.id } });
   revalidatePath("/");
   revalidatePath("/month");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Weight
+// ---------------------------------------------------------------------------
+
+/**
+ * Record a weigh-in.
+ *
+ * Writes BOTH the history row and Profile.weightKg in one transaction: targets
+ * are computed from the profile, so letting the two drift would mean the app
+ * showed one weight and scored against another.
+ *
+ * One row per local day — weight swings through the day, and a second weigh-in
+ * replaces rather than adds.
+ */
+export async function logWeight(
+  weightKg: number,
+  dateIso?: string,
+  note?: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Number.isFinite(weightKg) || weightKg < 20 || weightKg > 400) {
+    return { ok: false, error: "Enter a realistic weight." };
+  }
+
+  const at = dateIso ? new Date(dateIso) : new Date();
+  if (Number.isNaN(at.getTime())) return { ok: false, error: "That date isn't valid." };
+  const localDate = toLocalDate(at, user.timezone);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.weightLog.upsert({
+      where: { userId_localDate: { userId: user.userId, localDate } },
+      update: { weightKg, note: note?.trim() || null },
+      create: {
+        userId: user.userId,
+        localDate,
+        weightKg,
+        note: note?.trim() || null,
+      },
+    });
+
+    // Only move the profile's current weight when this is the newest weigh-in —
+    // back-filling last month must not rewrite today's targets.
+    const newest = await tx.weightLog.findFirst({
+      where: { userId: user.userId },
+      orderBy: { localDate: "desc" },
+      select: { localDate: true, weightKg: true },
+    });
+    if (newest) {
+      await tx.profile.update({
+        where: { userId: user.userId },
+        data: { weightKg: newest.weightKg },
+      });
+    }
+  });
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** Remove a weigh-in, and re-sync the profile to whatever is newest after it. */
+export async function deleteWeight(id: string): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const result = await prisma.weightLog.deleteMany({
+    where: { id, userId: user.userId },
+  });
+  if (result.count === 0) return { ok: false, error: "Not found." };
+
+  const newest = await prisma.weightLog.findFirst({
+    where: { userId: user.userId },
+    orderBy: { localDate: "desc" },
+    select: { weightKg: true },
+  });
+  if (newest) {
+    await prisma.profile.update({
+      where: { userId: user.userId },
+      data: { weightKg: newest.weightKg },
+    });
+  }
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Insights
+// ---------------------------------------------------------------------------
+
+export interface InsightActionResult {
+  ok: boolean;
+  error?: string;
+  notEnoughData?: boolean;
+}
+
+/**
+ * Generate (or regenerate) the weekly review.
+ *
+ * Deliberately an explicit action rather than something the page does on load:
+ * it takes ~25 seconds and costs a model call, so it must be something the user
+ * asks for and can see happening. Once generated it is cached, and the page
+ * reads the cache.
+ */
+export async function generateInsight(
+  periodStart: string,
+  periodEnd: string,
+  force = false,
+): Promise<InsightActionResult> {
+  const user = await requireUser();
+
+  const profile = await prisma.profile.findUnique({
+    where: { userId: user.userId },
+  });
+  if (!profile) return { ok: false, error: "Profile not found." };
+
+  const targets = computeTargets({
+    sex: profile.sex,
+    ageYears: profile.birthDate ? ageFrom(profile.birthDate, new Date()) : null,
+    heightCm: profile.heightCm,
+    weightKg: profile.weightKg,
+    activityLevel: profile.activityLevel,
+    goal: profile.goal,
+    calorieTargetOverride: profile.calorieTargetOverride,
+    proteinTargetOverride: profile.proteinTargetOverride,
+  });
+
+  try {
+    await generateWeeklyInsight({
+      userId: user.userId,
+      periodStart,
+      periodEnd,
+      timezone: user.timezone,
+      targets,
+      goal: profile.goal,
+      force,
+    });
+  } catch (error) {
+    if (error instanceof NotEnoughDataError) {
+      return { ok: false, notEnoughData: true, error: error.message };
+    }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not build the review.",
+    };
+  }
+
+  revalidatePath("/insights");
   return { ok: true };
 }
