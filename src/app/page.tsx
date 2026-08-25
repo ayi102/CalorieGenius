@@ -11,10 +11,8 @@ import {
 } from "@/lib/queries";
 import { env } from "@/lib/env";
 import { todayIso } from "@/lib/time";
-import { EntryBox } from "./entry-box";
-import { EntryCard } from "./entry-card";
+import { TodayLog } from "./today-log";
 import { ScoreCard } from "./score-card";
-import { Remembered } from "./remembered";
 import { DaySummary } from "./day-summary";
 import { Tabs } from "./tabs";
 import { InstallHint } from "./install-hint";
@@ -45,7 +43,7 @@ export default async function TodayPage() {
         : null,
     ),
     getParseUsage(user.userId, today),
-    getRememberedMeals(user.userId),
+    getRememberedMeals(user.userId, targets.kcal),
     getRememberedFoods(user.userId),
     getWaterForDay(
       user.userId,
@@ -87,43 +85,20 @@ export default async function TodayPage() {
       <InstallHint />
 
       <Tabs
-        initial={day.entries.length === 0 ? "log" : "meals"}
+        initial="today"
         tabs={[
           {
-            id: "log",
+            id: "today",
             label: "Log",
-            content: (
-              <div className="flex flex-col gap-4">
-                <EntryBox
-                  parsesRemaining={remaining}
-                  knownMeals={rememberedMeals.map((m) => ({
-                    entryId: m.entryId,
-                    rawText: m.rawText,
-                    kcal: m.kcal,
-                    timesLogged: m.timesLogged,
-                  }))}
-                />
-                <Remembered meals={rememberedMeals} foods={rememberedFoods} />
-              </div>
-            ),
-          },
-          {
-            id: "meals",
-            label: "Meals",
             badge: day.entries.length > 0 ? String(day.entries.length) : undefined,
-            content:
-              day.entries.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
-                  Nothing logged yet. Open <span className="text-foreground">Log</span>{" "}
-                  and type what you ate.
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-3">
-                  {day.entries.map((entry) => (
-                    <EntryCard key={entry.id} entry={entry} />
-                  ))}
-                </ul>
-              ),
+            content: (
+              <TodayLog
+                entries={day.entries}
+                meals={rememberedMeals}
+                foods={rememberedFoods}
+                parsesRemaining={remaining}
+              />
+            ),
           },
           {
             id: "body",

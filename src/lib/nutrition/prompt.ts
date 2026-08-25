@@ -38,18 +38,43 @@ Common reference weights (cooked, edible):
 - cup milk 240 g; can of soda 355 g; pint of beer 470 g
 - restaurant burrito 400 g; wrap or sandwich 250 g; side of fries 115 g
 
-## Splitting into items
+## Splitting into items — default to FEWER
 
-One item per distinct food. Split composed meals so the food-group and
-processing breakdown means something:
+This is the judgement that most affects whether the app is pleasant to use. Err
+toward fewer items. Someone logging a latte does not want to manage "espresso",
+"whole milk" and "cinnamon" as three separate lines they must each check.
 
-- "toast with butter" -> two items (bread; butter)
-- "chicken salad with ranch" -> three items (chicken; greens; ranch)
+**The test: is this one thing the person would order, cook, or hand you?** If
+yes, it is ONE item, even when they listed what is in it.
 
-But keep a genuinely single dish as one item when splitting it would be guesswork:
+One item, always:
 
-- "chicken shawarma wrap" -> one item, mixed_dish
-- "beef lasagna" -> one item, mixed_dish
+- "latte", "coffee with milk and cinnamon", "flat white with oat milk"
+  -> one beverage item. Never split a drink into its liquids and spices.
+- "sushi — salmon, rice, nori, avocado", "spicy tuna roll"
+  -> one mixed_dish. The person is describing what a roll contains, not
+     requesting four line items.
+- "smoothie with banana, spinach, protein powder and almond milk"
+  -> one beverage. It was blended; it is one thing.
+- "chicken shawarma wrap", "beef lasagna", "burrito bowl", "chicken caesar salad"
+  -> one mixed_dish each.
+- Any sandwich, burger, curry, stew, casserole, pizza slice, or soup.
+
+Listing ingredients is how people DESCRIBE a dish. Use those ingredients to get
+the nutrition right, then return one item named the way they named it.
+
+Split only when they genuinely ate separate things at the same sitting:
+
+- "2 eggs, toast with butter, and a large iced coffee"
+  -> eggs; toast; butter; iced coffee. Four separate foods on a plate and in a
+     cup. (Toast and butter split because butter is added at the table and its
+     amount varies wildly.)
+- "grilled chicken, rice and broccoli" -> three items. A plate of three
+  distinct components, each of which they could have had more or less of.
+- "burger and fries" -> two items. Two things, ordered separately.
+
+If you are unsure, combine. An over-split meal is a chore to check; a combined
+one still totals correctly, and the person can always say more next time.
 
 ## processedLevel (NOVA-style)
 
@@ -109,8 +134,18 @@ garlic sauce (2 tbsp, 30 g, fat, level 3, ""), fries (1 side, 115 g, grain, leve
 restaurantName "the Lebanese place". Restaurant portions, so estimate generously.
 
 Input: "grande latte with oat milk"
-One item: latte (1 grande, 470 g, dairy, level 3, usdaSearchQuery ""). ~180 kcal.
-Note: "Assumed a 16 oz grande with no added syrup."`;
+ONE item: "grande oat milk latte" (1 grande, 470 g, beverage, level 3,
+usdaSearchQuery ""). ~180 kcal. Not split into espresso and oat milk.
+Note: "Assumed a 16 oz grande with no added syrup."
+
+Input: "sushi - salmon, rice, avocado, nori, soy sauce"
+ONE item: "salmon avocado sushi" (1 serving, 250 g, mixed_dish, level 2,
+usdaSearchQuery ""). The ingredient list informs the nutrition; it does not
+become five items. Note: "Estimated as about 6 pieces."
+
+Input: "coffee with milk and cinnamon"
+ONE item: "coffee with milk" (1 cup, 250 g, beverage, level 1,
+usdaSearchQuery ""). ~40 kcal. Cinnamon is a trace and needs no line of its own.`;
 
 /** Instruction for the photo flow, appended after the shared prompt. */
 export const PHOTO_INSTRUCTION = `This is a photograph of food. Identify each item and estimate portions from

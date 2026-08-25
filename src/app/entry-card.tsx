@@ -149,6 +149,36 @@ function ItemRow({ item }: { item: DayItemView }) {
 
       {expanded && (
         <div className="mt-2 flex flex-col gap-2 rounded-md bg-surface-raised p-2">
+          {/* Nutrition first: for a composite item this is what you opened it
+              to see, not the edit controls. */}
+          <dl className="grid grid-cols-4 gap-2 text-center">
+            {[
+              { l: "cal", v: Math.round(item.kcal) },
+              { l: "protein", v: `${Math.round(item.protein)} g` },
+              { l: "carbs", v: `${Math.round(item.carbs)} g` },
+              { l: "fat", v: `${Math.round(item.fat)} g` },
+            ].map((x) => (
+              <div key={x.l}>
+                <dd className="tnum text-sm font-medium">{x.v}</dd>
+                <dt className="text-[10px] text-muted">{x.l}</dt>
+              </div>
+            ))}
+          </dl>
+          <div className="flex items-baseline justify-between gap-2 border-t border-border pt-1.5 text-[11px] text-muted">
+            <span>
+              {item.fiber > 0 && `${Math.round(item.fiber)} g fiber · `}
+              {item.foodGroup.replace("_", " ")} · level {item.processedLevel}
+            </span>
+            <span>
+              {item.nutritionSource === "usda"
+                ? "USDA"
+                : item.nutritionSource === "openfoodfacts"
+                  ? "label"
+                  : item.nutritionSource === "user"
+                    ? "yours"
+                    : "estimate"}
+            </span>
+          </div>
           <p className="text-[10px] text-muted">
             Nothing is saved until you press a button — Esc or a tap outside
             discards.

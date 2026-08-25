@@ -461,8 +461,15 @@ export interface RememberedMeal {
   rawText: string;
   restaurantName: string | null;
   itemCount: number;
+  /** The individual foods, so the picker can show what's in a recipe. */
+  items: { name: string; grams: number; kcal: number }[];
   kcal: number;
   protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  /** Scored as a meal, so a recipe can be judged before it's added. */
+  score: MealScore | null;
   timesLogged: number;
   lastEatenAt: Date;
 }
@@ -479,7 +486,8 @@ export interface RememberedMeal {
  */
 export async function getRememberedMeals(
   userId: string,
-  limit = 8,
+  targetKcal: number,
+  limit = 12,
 ): Promise<RememberedMeal[]> {
   // Group in SQL rather than pulling every entry into memory: this runs on the
   // Today page, and a year of history is thousands of rows.
@@ -516,13 +524,32 @@ export async function getRememberedMeals(
     .map((g) => {
       const entry = byId.get(g.entryId);
       if (!entry) return null;
+      const scoreItems = entry.items.map((i) => ({
+        kcal: i.kcal,
+        protein: i.protein,
+        carbs: i.carbs,
+        fat: i.fat,
+        fiber: i.fiber ?? 0,
+        processedLevel: i.processedLevel,
+      }));
+
       return {
         entryId: g.entryId,
         rawText: g.rawText,
         restaurantName: entry.restaurantName,
         itemCount: entry.items.length,
+        items: entry.items.map((i) => ({
+          name: i.name,
+          grams: Math.round(i.grams),
+          kcal: Math.round(i.kcal),
+        })),
         kcal: Math.round(entry.items.reduce((s, i) => s + i.kcal, 0)),
         protein: Math.round(entry.items.reduce((s, i) => s + i.protein, 0)),
+        carbs: Math.round(entry.items.reduce((s, i) => s + i.carbs, 0)),
+        fat: Math.round(entry.items.reduce((s, i) => s + i.fat, 0)),
+        fiber: Math.round(entry.items.reduce((s, i) => s + (i.fiber ?? 0), 0)),
+        // Scored against the meal slot it was actually eaten in.
+        score: computeMealScore(scoreItems, entry.mealType, targetKcal),
         timesLogged: Number(g.times),
         lastEatenAt: g.lastAt,
       };
