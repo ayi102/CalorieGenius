@@ -2,15 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  combineFoods,
-  deleteRecipe,
-  hideFood,
-  logRecipe,
-  quickAddFood,
-  relogEntry,
-} from "@/lib/actions";
-import type { RecipeView, RememberedFood, RememberedMeal } from "@/lib/queries";
+import { deleteRecipe, logRecipe, relogEntry } from "@/lib/actions";
+import type { RecipeView, RememberedMeal } from "@/lib/queries";
 import { scoreBand } from "@/lib/scoring";
 
 const BAND: Record<string, string> = {
@@ -36,12 +29,10 @@ const BAND: Record<string, string> = {
 export function RecipePicker({
   recipes,
   meals,
-  foods,
   onClose,
 }: {
   recipes: RecipeView[];
   meals: RememberedMeal[];
-  foods: RememberedFood[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -51,39 +42,28 @@ export function RecipePicker({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   /**
-   * Three tabs, because they are three different kinds of thing:
+   * Three tabs, all of them HER OWN WORDS, split by what they produced:
+   *
    *   mine     — recipes she declared and named. Intent, not inference.
-   *   detected — repeated multi-item meals the app noticed in her log.
-   *   prompts  — single foods and one-offs; not really recipes at all.
+   *   detected — prompts that came back as several ingredients, so the app
+   *              recognised a composite: "sushi - salmon, rice, avocado".
+   *   prompts  — prompts that came back as one thing: "a latte", "an apple".
+   *
+   * The old third tab listed FoodItem rows, which is what put "espresso" and
+   * "ground cinnamon" in front of her. Those were never things she typed — they
+   * were fragments the parser made. Every tab here is text she actually wrote.
    *
    * Opens on whichever has content, preferring her own.
    */
   const [tab, setTab] = useState<"mine" | "detected" | "prompts">(
-    recipes.length > 0 ? "mine" : meals.length > 0 ? "detected" : "prompts",
+    recipes.length > 0
+      ? "mine"
+      : meals.some((m) => m.itemCount > 1)
+        ? "detected"
+        : "prompts",
   );
   const [servingsFor, setServingsFor] = useState<Record<string, string>>({});
 
-  /**
-   * Combine mode.
-   *
-   * Exists because anything logged before composites were kept whole left its
-   * ingredients in the library as separate rows — "espresso", "ground cinnamon",
-   * "chocolate milk" rather than "latte". Selecting them and giving them one
-   * name fixes the list without losing the nutrition already worked out.
-   */
-  const [showComponents, setShowComponents] = useState(false);
-  const [selecting, setSelecting] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [combineName, setCombineName] = useState("");
-
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -116,24 +96,16 @@ export function RecipePicker({
   const shownRecipes = needle
     ? recipes.filter((r) => r.name.toLowerCase().includes(needle))
     : recipes;
-  const shownMeals = needle
+
+  const matched = needle
     ? meals.filter((m) => m.rawText.toLowerCase().includes(needle))
     : meals;
-  const matchedFoods = needle
-    ? foods.filter((f) => f.displayName.toLowerCase().includes(needle))
-    : foods;
+  // A prompt that produced several items is a composite the app detected; one
+  // that produced a single item is just a thing she logged.
+  const detected = matched.filter((m) => m.itemCount > 1);
+  const simple = matched.filter((m) => m.itemCount === 1);
+  const shownMeals = tab === "detected" ? detected : simple;
 
-  /**
-   * Split by what the log already knows.
-   *
-   * A food she has eaten on its own is something she chooses; one that has only
-   * ever appeared inside a meal is a component of it, and the meal — which
-   * carries the words she typed — is the better thing to re-log. Deriving this
-   * means she never has to tell the app which is which.
-   */
-  const standalone = matchedFoods.filter((f) => f.soloCount > 0);
-  const components = matchedFoods.filter((f) => f.soloCount === 0);
-  const shownFoods = showComponents ? components : standalone;
 
   return (
     <div
@@ -179,8 +151,16 @@ export function RecipePicker({
             {(
               [
                 ["mine", "My Recipes", recipes.length],
-                ["detected", "Detected Recipes", meals.length],
-                ["prompts", "Prompts", foods.length],
+                [
+                  "detected",
+                  "Detected Recipes",
+                  meals.filter((m) => m.itemCount > 1).length,
+                ],
+                [
+                  "prompts",
+                  "Prompts",
+                  meals.filter((m) => m.itemCount === 1).length,
+                ],
               ] as const
             ).map(([id, label, count]) => (
               <button
@@ -424,214 +404,7 @@ export function RecipePicker({
                 })}
               </ul>
             )
-          ) : matchedFoods.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted">
-              {foods.length === 0
-                ? "Nothing saved yet."
-                : "No match."}
-            </p>
-          ) : (
-            <>
-              {/* Where the one-tap answer actually lives. */}
-              {components.length > 0 && (
-                <div className="mb-3 rounded-lg bg-surface-raised p-3">
-                  <p className="text-xs text-muted">
-                    {showComponents
-                      ? `These ${components.length} only ever appeared inside a meal. To log the whole thing in one tap, use the Meals list.`
-                      : `${components.length} more are parts of meals rather than things you've eaten alone — the Meals list logs those in one tap.`}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowComponents((v) => !v)}
-                    className="mt-1.5 min-h-8 text-xs font-medium underline decoration-border underline-offset-4 hover:decoration-foreground"
-                  >
-                    {showComponents
-                      ? "Back to foods you eat on their own"
-                      : `Show meal parts (${components.length})`}
-                  </button>
-                </div>
-              )}
-
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {!selecting ? (
-                  <button
-                    type="button"
-                    onClick={() => setSelecting(true)}
-                    className="min-h-9 rounded-full border border-border px-3 text-xs text-muted hover:text-foreground"
-                  >
-                    Combine ingredients into one
-                  </button>
-                ) : (
-                  <>
-                    <input
-                      value={combineName}
-                      onChange={(e) => setCombineName(e.target.value)}
-                      placeholder="Name it, e.g. Latte"
-                      aria-label="Name for the combined food"
-                      className="min-h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 text-sm"
-                    />
-                    <button
-                      type="button"
-                      disabled={
-                        pending || selected.size < 2 || combineName.trim().length < 2
-                      }
-                      onClick={() =>
-                        run("combine", async () => {
-                          const r = await combineFoods(
-                            [...selected],
-                            combineName,
-                          );
-                          if (r.ok) {
-                            setSelecting(false);
-                            setSelected(new Set());
-                            setCombineName("");
-                          }
-                          return r;
-                        })
-                      }
-                      className="min-h-9 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
-                    >
-                      {busy === "combine" ? "…" : `Combine ${selected.size}`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelecting(false);
-                        setSelected(new Set());
-                        setCombineName("");
-                      }}
-                      className="min-h-9 rounded-md border border-border px-2.5 text-xs text-muted"
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-              {selecting && (
-                <p className="mb-2 text-[11px] text-muted">
-                  Tick the ingredients that make up one thing — their nutrition is
-                  added together and they leave this list.
-                </p>
-              )}
-              {shownFoods.length === 0 && (
-                <p className="py-6 text-center text-sm text-muted">
-                  Nothing here yet — everything you&apos;ve logged came as part of
-                  a meal.
-                </p>
-              )}
-              <ul className="flex flex-col divide-y divide-border">
-              {shownFoods.map((f) => {
-                const expanded = open === f.id;
-                return (
-                  <li key={f.id} className="py-2.5">
-                    <div className="flex items-start gap-2">
-                      {selecting && (
-                        <input
-                          type="checkbox"
-                          checked={selected.has(f.id)}
-                          onChange={() => toggle(f.id)}
-                          aria-label={`Select ${f.displayName}`}
-                          className="mt-1 h-4 w-4 shrink-0"
-                        />
-                      )}
-                      {/* Same affordance as a meal: tap the name for nutrition,
-                          tap Add to log it. A single food is often a composite
-                          — a latte, a smoothie — so its macros matter just as
-                          much as a multi-item meal's. */}
-                      <button
-                        type="button"
-                        onClick={() => setOpen(expanded ? null : f.id)}
-                        aria-expanded={expanded}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <p className="text-sm [overflow-wrap:anywhere]">
-                          {f.displayName}
-                          {f.brand && (
-                            <span className="text-muted"> · {f.brand}</span>
-                          )}
-                        </p>
-                        <p className="tnum mt-0.5 text-xs text-muted">
-                          {f.kcalForDefault} cal ·{" "}
-                          {f.unitIsServing
-                            ? "1 serving"
-                            : `${Math.round(f.defaultGrams)} g`}
-                          {f.timesLogged > 1 && ` · ${f.timesLogged}×`}
-                        </p>
-                      </button>
-                      {!selecting && (
-                        <button
-                          type="button"
-                          disabled={pending}
-                          onClick={() =>
-                            run(f.id, () =>
-                              quickAddFood(f.id, f.unitIsServing ? 1 : f.defaultGrams),
-                            )
-                          }
-                          className="min-h-9 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
-                        >
-                          {busy === f.id ? "…" : "Add"}
-                        </button>
-                      )}
-                    </div>
-
-                    {expanded && (
-                      <div className="mt-2 rounded-lg bg-surface-raised p-3">
-                        <dl className="grid grid-cols-4 gap-2 text-center">
-                          {[
-                            { l: "cal", v: f.kcalForDefault },
-                            { l: "protein", v: `${f.proteinForDefault} g` },
-                            { l: "carbs", v: `${f.carbsForDefault} g` },
-                            { l: "fat", v: `${f.fatForDefault} g` },
-                          ].map((x) => (
-                            <div key={x.l}>
-                              <dd className="tnum text-sm font-medium">{x.v}</dd>
-                              <dt className="text-[10px] text-muted">{x.l}</dt>
-                            </div>
-                          ))}
-                        </dl>
-                        <p className="mt-2 flex items-baseline justify-between gap-2 border-t border-border pt-2 text-[11px] text-muted">
-                          <span>
-                            {f.fiberForDefault > 0 &&
-                              `${f.fiberForDefault} g fiber · `}
-                            {f.foodGroup.replace("_", " ")} · level{" "}
-                            {f.processedLevel}
-                          </span>
-                          <span>
-                            {f.nutritionSource === "usda"
-                              ? "USDA"
-                              : f.nutritionSource === "openfoodfacts"
-                                ? "label"
-                                : f.nutritionSource === "user"
-                                  ? "yours"
-                                  : "estimate"}
-                          </span>
-                        </p>
-                        <div className="mt-1.5 flex items-center justify-between gap-2">
-                          <p className="text-[10px] text-muted">
-                            Per{" "}
-                            {f.unitIsServing
-                              ? "serving"
-                              : `${Math.round(f.defaultGrams)} g portion`}
-                            . Adjust after adding.
-                          </p>
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() => run(f.id, () => hideFood(f.id))}
-                            className="min-h-8 shrink-0 px-2 text-[10px] text-muted hover:text-negative"
-                          >
-                            Hide from this list
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-              </ul>
-            </>
-          )}
-
+          ) : null}
           {error && <p className="mt-2 text-sm text-negative">{error}</p>}
         </div>
       </div>

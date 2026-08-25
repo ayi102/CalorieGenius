@@ -3,7 +3,6 @@ import {
   getDay,
   getParseUsage,
   getProfile,
-  getRememberedFoods,
   getRecipes,
   getRememberedMeals,
   getWaterForDay,
@@ -30,7 +29,7 @@ export default async function TodayPage() {
   const targets = targetsForProfile(profile);
   const today = todayIso(profile.timezone);
 
-  const [day, usage, recipes, rememberedMeals, rememberedFoods, water, weight] =
+  const [day, usage, recipes, rememberedMeals, water, weight] =
     await Promise.all([
     getDay(
       user.userId,
@@ -46,7 +45,6 @@ export default async function TodayPage() {
     getParseUsage(user.userId, today),
     getRecipes(user.userId, targets.kcal),
     getRememberedMeals(user.userId, targets.kcal),
-    getRememberedFoods(user.userId),
     getWaterForDay(
       user.userId,
       today,
@@ -98,7 +96,6 @@ export default async function TodayPage() {
                 entries={day.entries}
                 recipes={recipes}
                 meals={rememberedMeals}
-                foods={rememberedFoods}
                 parsesRemaining={remaining}
               />
             ),
