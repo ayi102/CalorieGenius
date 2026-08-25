@@ -2,7 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { deleteRecipe, logRecipe, relogEntry } from "@/lib/actions";
+import {
+  deleteRecipe,
+  logRecipe,
+  promoteMealToRecipe,
+  relogEntry,
+  updateRecipe,
+} from "@/lib/actions";
 import type { RecipeView, RememberedMeal } from "@/lib/queries";
 import { scoreBand } from "@/lib/scoring";
 
@@ -55,13 +61,18 @@ export function RecipePicker({
    *
    * Opens on whichever has content, preferring her own.
    */
-  const [tab, setTab] = useState<"mine" | "detected" | "prompts">(
-    recipes.length > 0
-      ? "mine"
-      : meals.some((m) => m.itemCount > 1)
-        ? "detected"
-        : "prompts",
+  const [tab, setTab] = useState<"mine" | "detected">(
+    recipes.length > 0 ? "mine" : "detected",
   );
+  /** Name being typed when promoting a detected meal, keyed by entry id. */
+  const [promoting, setPromoting] = useState<Record<string, string>>({});
+  /** Recipe currently open in the editor. */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{
+    name: string;
+    servings: string;
+    grams: Record<string, string>;
+  } | null>(null);
   const [servingsFor, setServingsFor] = useState<Record<string, string>>({});
 
 
@@ -84,11 +95,15 @@ export function RecipePicker({
     start(async () => {
       const r = await fn();
       setBusy(null);
-      if (!r.ok) setError(r.error ?? "Could not add that.");
-      else {
-        router.refresh();
-        onClose();
+      if (!r.ok) {
+        setError(r.error ?? "Could not do that.");
+        return;
       }
+      router.refresh();
+      // Editing and promoting keep the sheet open — only logging is "done".
+      const staysOpen =
+        key.startsWith("edit-") || key.startsWith("promote-") || key === "combine";
+      if (!staysOpen) onClose();
     });
   }
 
@@ -97,14 +112,15 @@ export function RecipePicker({
     ? recipes.filter((r) => r.name.toLowerCase().includes(needle))
     : recipes;
 
-  const matched = needle
-    ? meals.filter((m) => m.rawText.toLowerCase().includes(needle))
+  // Search covers the title AND the original text, so an old prompt is still
+  // findable once the card is titled.
+  const shownMeals = needle
+    ? meals.filter(
+        (m) =>
+          m.title.toLowerCase().includes(needle) ||
+          m.rawText.toLowerCase().includes(needle),
+      )
     : meals;
-  // A prompt that produced several items is a composite the app detected; one
-  // that produced a single item is just a thing she logged.
-  const detected = matched.filter((m) => m.itemCount > 1);
-  const simple = matched.filter((m) => m.itemCount === 1);
-  const shownMeals = tab === "detected" ? detected : simple;
 
 
   return (
@@ -151,16 +167,7 @@ export function RecipePicker({
             {(
               [
                 ["mine", "My Recipes", recipes.length],
-                [
-                  "detected",
-                  "Detected Recipes",
-                  meals.filter((m) => m.itemCount > 1).length,
-                ],
-                [
-                  "prompts",
-                  "Prompts",
-                  meals.filter((m) => m.itemCount === 1).length,
-                ],
+                ["detected", "Detected Recipes", meals.length],
               ] as const
             ).map(([id, label, count]) => (
               <button
@@ -279,7 +286,7 @@ export function RecipePicker({
                               </li>
                             ))}
                           </ul>
-                          <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+                          <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-border pt-2">
                             <label className="flex items-center gap-1.5 text-[11px] text-muted">
                               Log
                               <input
@@ -302,13 +309,125 @@ export function RecipePicker({
                             </label>
                             <button
                               type="button"
+                              onClick={() => {
+                                setEditing(editing === r.id ? null : r.id);
+                                setDraft({
+                                  name: r.name,
+                                  servings: String(r.servings),
+                                  // Editor works in BATCH grams; the list shows
+                                  // per-serving, so scale back up.
+                                  grams: Object.fromEntries(
+                                    r.items.map((it) => [
+                                      it.id,
+                                      String(Math.round(it.grams * r.servings)),
+                                    ]),
+                                  ),
+                                });
+                              }}
+                              className="min-h-9 rounded border border-border px-2.5 text-[11px] hover:border-accent"
+                            >
+                              {editing === r.id ? "Close" : "Edit"}
+                            </button>
+                            <button
+                              type="button"
                               disabled={pending}
                               onClick={() => run(r.id, () => deleteRecipe(r.id))}
                               className="ml-auto min-h-9 px-2 text-[11px] text-muted hover:text-negative"
                             >
-                              Delete recipe
+                              Delete
                             </button>
                           </div>
+
+                          {editing === r.id && draft && (
+                            <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
+                              <div className="flex gap-2">
+                                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                                  <span className="text-[10px] text-muted">Name</span>
+                                  <input
+                                    value={draft.name}
+                                    onChange={(e) =>
+                                      setDraft({ ...draft, name: e.target.value })
+                                    }
+                                    className="min-h-9 w-full rounded border border-border bg-background px-2 text-xs"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                  <span className="text-[10px] text-muted">Makes</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={100}
+                                    step="any"
+                                    inputMode="decimal"
+                                    value={draft.servings}
+                                    onChange={(e) =>
+                                      setDraft({ ...draft, servings: e.target.value })
+                                    }
+                                    className="tnum min-h-9 w-16 rounded border border-border bg-background px-1.5 text-right text-xs"
+                                  />
+                                </label>
+                              </div>
+
+                              <p className="text-[10px] text-muted">
+                                Ingredient weights for the whole batch. Set one to
+                                0 to remove it.
+                              </p>
+                              {r.items.map((it) => (
+                                <div key={it.id} className="flex items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate text-[11px]">
+                                    {it.name}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step="any"
+                                    inputMode="decimal"
+                                    value={draft.grams[it.id] ?? ""}
+                                    onChange={(e) =>
+                                      setDraft({
+                                        ...draft,
+                                        grams: {
+                                          ...draft.grams,
+                                          [it.id]: e.target.value,
+                                        },
+                                      })
+                                    }
+                                    className="tnum min-h-9 w-20 rounded border border-border bg-background px-1.5 text-right text-[11px]"
+                                    aria-label={`Grams of ${it.name}`}
+                                  />
+                                  <span className="text-[10px] text-muted">g</span>
+                                </div>
+                              ))}
+
+                              <button
+                                type="button"
+                                disabled={pending || draft.name.trim().length < 2}
+                                onClick={() =>
+                                  run(`edit-${r.id}`, async () => {
+                                    const res = await updateRecipe({
+                                      recipeId: r.id,
+                                      name: draft.name,
+                                      servings: Number(draft.servings) || 1,
+                                      itemGrams: Object.fromEntries(
+                                        Object.entries(draft.grams).map(([k, v]) => [
+                                          k,
+                                          Number(v) || 0,
+                                        ]),
+                                      ),
+                                    });
+                                    if (res.ok) {
+                                      setEditing(null);
+                                      setDraft(null);
+                                    }
+                                    return res;
+                                  })
+                                }
+                                className="min-h-9 self-start rounded bg-accent px-3 text-[11px] font-medium text-accent-fg disabled:opacity-50"
+                              >
+                                {busy === `edit-${r.id}` ? "…" : "Save changes"}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </li>
@@ -403,6 +522,41 @@ export function RecipePicker({
                               You typed: {m.rawText}
                             </p>
                           )}
+
+                          {/* Detected meals shift as history changes; saving
+                              one pins it so it can be renamed and portioned. */}
+                          <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+                            <input
+                              value={promoting[m.entryId] ?? m.title}
+                              onChange={(e) =>
+                                setPromoting((p) => ({
+                                  ...p,
+                                  [m.entryId]: e.target.value,
+                                }))
+                              }
+                              aria-label="Recipe name"
+                              className="min-h-9 min-w-0 flex-1 rounded border border-border bg-background px-2 text-xs"
+                            />
+                            <button
+                              type="button"
+                              disabled={pending}
+                              onClick={() =>
+                                run(`promote-${m.entryId}`, async () => {
+                                  const r = await promoteMealToRecipe(
+                                    m.entryId,
+                                    promoting[m.entryId] ?? m.title,
+                                  );
+                                  if (r.ok) setTab("mine");
+                                  return r;
+                                })
+                              }
+                              className="min-h-9 shrink-0 rounded border border-border px-2.5 text-[11px] font-medium hover:border-accent"
+                            >
+                              {busy === `promote-${m.entryId}`
+                                ? "…"
+                                : "Save as recipe"}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </li>

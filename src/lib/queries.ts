@@ -493,7 +493,9 @@ export interface RememberedMeal {
 export async function getRememberedMeals(
   userId: string,
   targetKcal: number,
-  limit = 12,
+  // Detected meals accumulate forever; 20 is enough to cover what someone
+  // actually rotates through, and search covers the rest.
+  limit = 20,
 ): Promise<RememberedMeal[]> {
   // Group in SQL rather than pulling every entry into memory: this runs on the
   // Today page, and a year of history is thousands of rows.
@@ -807,9 +809,16 @@ export async function getWeightHistory(
 export async function getInsight(
   userId: string,
   periodStart: IsoDate,
+  kind: "weekly" | "patterns" = "weekly",
 ): Promise<{ report: unknown; generatedAt: Date; model: string } | null> {
   const row = await prisma.insight.findUnique({
-    where: { userId_periodStart: { userId, periodStart: isoDateToUtc(periodStart) } },
+    where: {
+      userId_kind_periodStart: {
+        userId,
+        kind,
+        periodStart: isoDateToUtc(periodStart),
+      },
+    },
   });
   if (!row) return null;
   return { report: row.content, generatedAt: row.generatedAt, model: row.model };
@@ -903,7 +912,7 @@ export interface RecipeView {
   servings: number;
   notes: string | null;
   itemCount: number;
-  items: { name: string; grams: number; kcal: number }[];
+  items: { id: string; name: string; grams: number; kcal: number }[];
   /** Nutrition for ONE serving — what logging it actually adds. */
   perServing: {
     kcal: number;
@@ -954,7 +963,9 @@ export async function getRecipes(
       notes: r.notes,
       itemCount: r.items.length,
       items: r.items.map((i) => ({
+        id: i.id,
         name: i.name,
+        // Per serving for display; the editor works in batch grams.
         grams: Math.round(i.grams / servings),
         kcal: Math.round(i.kcal / servings),
       })),
@@ -977,4 +988,165 @@ export async function getRecipes(
       lastLoggedAt: r.lastLoggedAt,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Computed facts — no model call, available the moment there is any data
+// ---------------------------------------------------------------------------
+
+export interface KnownFacts {
+  windowDays: number;
+  daysTracked: number;
+  avgKcal: number | null;
+  avgProtein: number | null;
+  avgFiber: number | null;
+  avgMealsPerDay: number | null;
+  avgWaterMl: number | null;
+  /** Meals eaten at a named restaurant, and what share of all meals that is. */
+  mealsOut: number;
+  totalMeals: number;
+  eatingOutPct: number | null;
+  /** Distinct days with at least one restaurant meal. */
+  daysWithEatingOut: number;
+  /** Share of calories from ultra-processed food (level 4). */
+  ultraProcessedPct: number | null;
+  daysOnTarget: number;
+  targetKcal: number;
+  weight: {
+    startKg: number | null;
+    latestKg: number | null;
+    changeKg: number | null;
+    /** kg per week, from a least-squares fit. Negative is loss. */
+    ratePerWeekKg: number | null;
+    weighIns: number;
+  };
+}
+
+/**
+ * Facts the app can state without asking a model anything.
+ *
+ * Split out from the AI review deliberately: these are arithmetic, so they are
+ * instant, free, exact, and available from the first day. Nothing here is an
+ * interpretation — that is the other section's job.
+ */
+export async function getKnownFacts(
+  userId: string,
+  today: IsoDate,
+  targetKcal: number,
+  windowDays = 30,
+): Promise<KnownFacts> {
+  const end = isoDateToUtc(today);
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - (windowDays - 1));
+
+  const [entries, water, weights] = await Promise.all([
+    prisma.entry.findMany({
+      where: { userId, localDate: { gte: start, lte: end } },
+      include: { items: true },
+    }),
+    prisma.waterLog.groupBy({
+      by: ["localDate"],
+      where: { userId, localDate: { gte: start, lte: end } },
+      _sum: { ml: true },
+    }),
+    prisma.weightLog.findMany({
+      where: { userId },
+      orderBy: { localDate: "asc" },
+    }),
+  ]);
+
+  const byDay = new Map<string, typeof entries>();
+  for (const e of entries) {
+    const k = utcToIsoDate(e.localDate);
+    const l = byDay.get(k);
+    if (l) l.push(e);
+    else byDay.set(k, [e]);
+  }
+
+  const items = entries.flatMap((e) => e.items);
+  const daysTracked = byDay.size;
+  const mean = (xs: number[]) =>
+    xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
+  const dailyKcal = [...byDay.values()].map((es) =>
+    es.flatMap((e) => e.items).reduce((s, i) => s + i.kcal, 0),
+  );
+
+  const mealsOut = entries.filter((e) => e.restaurantName !== null).length;
+  const daysWithEatingOut = new Set(
+    entries
+      .filter((e) => e.restaurantName !== null)
+      .map((e) => utcToIsoDate(e.localDate)),
+  ).size;
+
+  const totalKcal = items.reduce((s, i) => s + i.kcal, 0);
+  const ultraKcal = items
+    .filter((i) => i.processedLevel === 4)
+    .reduce((s, i) => s + i.kcal, 0);
+
+  /**
+   * Weight trend by least squares over (days, kg).
+   *
+   * A fit rather than first-minus-last: daily weight swings a kilo on water
+   * alone, so two endpoints can show a gain during a genuine loss. Needs at
+   * least three weigh-ins spanning a week to mean anything.
+   */
+  let ratePerWeekKg: number | null = null;
+  if (weights.length >= 3) {
+    const t0 = weights[0].localDate.getTime();
+    const xs = weights.map((w) => (w.localDate.getTime() - t0) / 86400000);
+    const ys = weights.map((w) => w.weightKg);
+    const spanDays = xs[xs.length - 1];
+    if (spanDays >= 7) {
+      const n = xs.length;
+      const mx = xs.reduce((a, b) => a + b, 0) / n;
+      const my = ys.reduce((a, b) => a + b, 0) / n;
+      let num = 0;
+      let den = 0;
+      for (let i = 0; i < n; i++) {
+        num += (xs[i] - mx) * (ys[i] - my);
+        den += (xs[i] - mx) ** 2;
+      }
+      if (den > 0) ratePerWeekKg = Math.round((num / den) * 7 * 100) / 100;
+    }
+  }
+
+  return {
+    windowDays,
+    daysTracked,
+    avgKcal: mean(dailyKcal) === null ? null : Math.round(mean(dailyKcal)!),
+    avgProtein: daysTracked
+      ? Math.round(items.reduce((s, i) => s + i.protein, 0) / daysTracked)
+      : null,
+    avgFiber: daysTracked
+      ? Math.round(items.reduce((s, i) => s + (i.fiber ?? 0), 0) / daysTracked)
+      : null,
+    avgMealsPerDay: daysTracked
+      ? Math.round((entries.length / daysTracked) * 10) / 10
+      : null,
+    avgWaterMl: water.length
+      ? Math.round(water.reduce((s, w) => s + (w._sum.ml ?? 0), 0) / water.length)
+      : null,
+    mealsOut,
+    totalMeals: entries.length,
+    eatingOutPct: entries.length ? Math.round((mealsOut / entries.length) * 100) : null,
+    daysWithEatingOut,
+    ultraProcessedPct:
+      totalKcal > 0 ? Math.round((ultraKcal / totalKcal) * 100) : null,
+    daysOnTarget: dailyKcal.filter(
+      (k) => Math.abs(k - targetKcal) / targetKcal <= 0.1,
+    ).length,
+    targetKcal,
+    weight: {
+      startKg: weights[0]?.weightKg ?? null,
+      latestKg: weights[weights.length - 1]?.weightKg ?? null,
+      changeKg:
+        weights.length >= 2
+          ? Math.round(
+              (weights[weights.length - 1].weightKg - weights[0].weightKg) * 10,
+            ) / 10
+          : null,
+      ratePerWeekKg,
+      weighIns: weights.length,
+    },
+  };
 }

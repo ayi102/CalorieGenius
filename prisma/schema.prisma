@@ -396,7 +396,12 @@ model Insight {
   userId  String
   profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
-  /// Inclusive local-date bounds of the week this report covers.
+  /// "weekly" for the week review, "patterns" for the long-window analysis.
+  /// Two different reports over two different windows, so they cannot share a
+  /// cache key.
+  kind String @default("weekly")
+
+  /// Inclusive local-date bounds this report covers.
   periodStart DateTime @db.Date
   periodEnd   DateTime @db.Date
 
@@ -407,8 +412,8 @@ model Insight {
   model       String
   generatedAt DateTime @default(now())
 
-  @@unique([userId, periodStart])
-  @@index([userId, periodStart])
+  @@unique([userId, kind, periodStart])
+  @@index([userId, kind, periodStart])
 }
 
 

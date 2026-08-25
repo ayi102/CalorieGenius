@@ -138,7 +138,7 @@ export async function generateWeeklyInsight(
 
   if (!options.force) {
     const cached = await prisma.insight.findUnique({
-      where: { userId_periodStart: { userId, periodStart: start } },
+      where: { userId_kind_periodStart: { userId, kind: "weekly", periodStart: start } },
     });
     if (cached) {
       // Re-validate rather than trusting stored JSON: the schema may have moved
@@ -194,7 +194,7 @@ export async function generateWeeklyInsight(
 
   await prisma.insight
     .upsert({
-      where: { userId_periodStart: { userId, periodStart: start } },
+      where: { userId_kind_periodStart: { userId, kind: "weekly", periodStart: start } },
       update: {
         content: report,
         model,
@@ -203,6 +203,7 @@ export async function generateWeeklyInsight(
       },
       create: {
         userId,
+        kind: "weekly",
         periodStart: start,
         periodEnd: isoDateToUtc(periodEnd),
         content: report,

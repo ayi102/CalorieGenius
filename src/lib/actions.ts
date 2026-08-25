@@ -27,6 +27,10 @@ import {
   generateWeeklyInsight,
   NotEnoughDataError,
 } from "@/lib/insights/generate";
+import {
+  generatePatternInsight,
+  NotEnoughPatternDataError,
+} from "@/lib/insights/patterns";
 import { lookupBarcode } from "@/lib/nutrition/off";
 import { searchUsdaByBarcode } from "@/lib/nutrition/usda";
 
@@ -1664,5 +1668,219 @@ export async function deleteRecipe(recipeId: string): Promise<ActionResult> {
   });
   if (result.count === 0) return { ok: false, error: "Recipe not found." };
   revalidatePath("/");
+  return { ok: true };
+}
+
+/**
+ * Turn a detected meal into a saved recipe.
+ *
+ * Detected meals are inferred and shift as history changes; a recipe is
+ * declared and stays. Promoting copies the items so the recipe keeps the
+ * nutrition it had at that moment, including any corrections.
+ */
+export async function promoteMealToRecipe(
+  entryId: string,
+  name: string,
+  servings = 1,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const title = name.trim();
+  if (title.length < 2) return { ok: false, error: "Give the recipe a name." };
+
+  const entry = await prisma.entry.findFirst({
+    where: { id: entryId, userId: user.userId },
+    include: { items: true },
+  });
+  if (!entry) return { ok: false, error: "That meal is no longer in your history." };
+  if (entry.items.length === 0) return { ok: false, error: "That meal has no items." };
+
+  const s = Number.isFinite(servings) && servings > 0 ? servings : 1;
+
+  try {
+    const existing = await prisma.recipe.findFirst({
+      where: { userId: user.userId, name: title },
+      select: { id: true },
+    });
+    if (existing) {
+      return { ok: false, error: `You already have a recipe called "${title}".` };
+    }
+
+    await prisma.recipe.create({
+      data: {
+        userId: user.userId,
+        name: title,
+        servings: s,
+        sourceText: entry.rawText,
+        // Item nutrition is for the whole batch; a promoted single meal IS one
+        // batch, so multiply by servings if she says it makes more than one.
+        items: {
+          create: entry.items.map((i) => ({
+            name: i.name,
+            brand: i.brand,
+            quantity: i.quantity * s,
+            unit: i.unit,
+            grams: i.grams * s,
+            kcal: i.kcal * s,
+            protein: i.protein * s,
+            carbs: i.carbs * s,
+            fat: i.fat * s,
+            fiber: i.fiber === null ? null : i.fiber * s,
+            sugar: i.sugar === null ? null : i.sugar * s,
+            sodium: i.sodium === null ? null : i.sodium * s,
+            foodGroup: i.foodGroup,
+            processedLevel: i.processedLevel,
+            nutritionSource: i.nutritionSource,
+            confidence: i.confidence,
+            usdaFdcId: i.usdaFdcId,
+          })),
+        },
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not save that recipe.",
+    };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/**
+ * Edit a saved recipe: rename, re-portion, adjust or drop ingredients.
+ *
+ * Ingredient amounts are given in grams and the nutrition is rescaled from what
+ * was stored, so editing a portion never silently loses the grounded numbers.
+ */
+export async function updateRecipe(input: {
+  recipeId: string;
+  name?: string;
+  servings?: number;
+  notes?: string;
+  /** Grams per ingredient id. Omit an id to leave it; set 0 to remove it. */
+  itemGrams?: Record<string, number>;
+}): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const recipe = await prisma.recipe.findFirst({
+    where: { id: input.recipeId, userId: user.userId },
+    include: { items: true },
+  });
+  if (!recipe) return { ok: false, error: "Recipe not found." };
+
+  const name = input.name?.trim();
+  if (name !== undefined && name.length < 2) {
+    return { ok: false, error: "Give the recipe a name." };
+  }
+  const servings =
+    input.servings !== undefined
+      ? Number.isFinite(input.servings) && input.servings > 0 && input.servings <= 100
+        ? input.servings
+        : null
+      : undefined;
+  if (servings === null) return { ok: false, error: "Servings must be 1 to 100." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      if (input.itemGrams) {
+        for (const item of recipe.items) {
+          const next = input.itemGrams[item.id];
+          if (next === undefined) continue;
+
+          if (next <= 0) {
+            await tx.recipeItem.delete({ where: { id: item.id } });
+            continue;
+          }
+          if (item.grams <= 0) continue;
+
+          const f = next / item.grams;
+          await tx.recipeItem.update({
+            where: { id: item.id },
+            data: {
+              grams: next,
+              quantity: item.quantity * f,
+              kcal: item.kcal * f,
+              protein: item.protein * f,
+              carbs: item.carbs * f,
+              fat: item.fat * f,
+              fiber: item.fiber === null ? null : item.fiber * f,
+              sugar: item.sugar === null ? null : item.sugar * f,
+              sodium: item.sodium === null ? null : item.sodium * f,
+            },
+          });
+        }
+      }
+
+      await tx.recipe.update({
+        where: { id: recipe.id },
+        data: {
+          name: name ?? undefined,
+          servings: servings ?? undefined,
+          notes: input.notes === undefined ? undefined : input.notes.trim() || null,
+        },
+      });
+
+      const left = await tx.recipeItem.count({ where: { recipeId: recipe.id } });
+      if (left === 0) {
+        // A recipe with no ingredients is not a recipe.
+        await tx.recipe.delete({ where: { id: recipe.id } });
+      }
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not update the recipe.",
+    };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/** Build (or rebuild) the long-window pattern analysis. */
+export async function generatePatterns(
+  periodStart: string,
+  periodEnd: string,
+  force = false,
+): Promise<InsightActionResult> {
+  const user = await requireUser();
+
+  const profile = await prisma.profile.findUnique({ where: { userId: user.userId } });
+  if (!profile) return { ok: false, error: "Profile not found." };
+
+  const targets = computeTargets({
+    sex: profile.sex,
+    ageYears: profile.birthDate ? ageFrom(profile.birthDate, new Date()) : null,
+    heightCm: profile.heightCm,
+    weightKg: profile.weightKg,
+    activityLevel: profile.activityLevel,
+    goal: profile.goal,
+    calorieTargetOverride: profile.calorieTargetOverride,
+    proteinTargetOverride: profile.proteinTargetOverride,
+  });
+
+  try {
+    await generatePatternInsight({
+      userId: user.userId,
+      periodStart,
+      periodEnd,
+      timezone: user.timezone,
+      targets,
+      goal: profile.goal,
+      force,
+    });
+  } catch (error) {
+    if (error instanceof NotEnoughPatternDataError) {
+      return { ok: false, notEnoughData: true, error: error.message };
+    }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not build the analysis.",
+    };
+  }
+
+  revalidatePath("/insights");
   return { ok: true };
 }
