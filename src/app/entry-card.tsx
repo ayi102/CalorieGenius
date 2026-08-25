@@ -75,23 +75,69 @@ function ItemRow({ item }: { item: DayItemView }) {
     setForm(pristine);
   }
 
-  // Escape closes, and so does a tap anywhere outside the row — the two things
-  // people reflexively try when they opened something by accident.
+  /**
+   * Escape closes, and so does a TAP outside the row.
+   *
+   * Deliberately not on `pointerdown`: that fires the instant a finger touches
+   * the screen, including when starting to scroll, so the panel collapsed the
+   * moment anyone tried to scroll the page. On a phone that is indistinguishable
+   * from "scrolling is broken".
+   *
+   * So the gesture is only treated as a dismissing tap if the pointer went down
+   * outside the row AND came back up within a few pixels. A drag of any distance
+   * is a scroll, and leaves the panel open.
+   */
   useEffect(() => {
     if (!expanded) return;
+
+    let startedOutside = false;
+    let dragged = false;
+    let startX = 0;
+    let startY = 0;
 
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") dismiss();
     }
     function onPointerDown(e: PointerEvent) {
-      if (!rowRef.current?.contains(e.target as Node)) dismiss();
+      startedOutside = !rowRef.current?.contains(e.target as Node);
+      dragged = false;
+      startX = e.clientX;
+      startY = e.clientY;
+    }
+    /**
+     * Movement is tracked here rather than by comparing coordinates on pointerup.
+     * A pointerup does not reliably carry the final position — a synthesized
+     * touch end can report 0,0 — and a tap would then look like a 300px drag and
+     * never dismiss.
+     */
+    function onPointerMove(e: PointerEvent) {
+      if (!startedOutside || dragged) return;
+      // 10px of slop: a finger never lands and lifts perfectly still.
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 10) dragged = true;
+    }
+    function onPointerUp() {
+      const wasTap = startedOutside && !dragged;
+      startedOutside = false;
+      dragged = false;
+      if (wasTap) dismiss();
+    }
+    // A scroll the browser takes over cancels the pointer; that is never a tap.
+    function onCancel() {
+      startedOutside = false;
+      dragged = false;
     }
 
     document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onCancel);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onCancel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded]);
