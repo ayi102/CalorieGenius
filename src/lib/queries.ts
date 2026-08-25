@@ -736,3 +736,65 @@ export async function countTrackedDays(
   });
   return rows.length;
 }
+
+// ---------------------------------------------------------------------------
+// Usage and cost
+// ---------------------------------------------------------------------------
+
+export interface UsageSummary {
+  totalParses: number;
+  totalCostCents: number;
+  daysWithParses: number;
+  /** Last 30 local days. */
+  recentParses: number;
+  recentCostCents: number;
+  /** Cents per parse across all time — the real figure, not an estimate. */
+  averageCostCents: number | null;
+  firstUsedAt: Date | null;
+}
+
+/**
+ * What this user's food lookups have actually cost.
+ *
+ * Reads the ParseUsage meter, which is incremented at the point of every model
+ * call — so this is a record of what happened, not a projection. Cache hits and
+ * re-logged meals are absent by construction, which is why the number stays
+ * lower than "meals logged" would suggest.
+ */
+export async function getUsageSummary(
+  userId: string,
+  today: IsoDate,
+): Promise<UsageSummary> {
+  const cutoff = isoDateToUtc(today);
+  cutoff.setUTCDate(cutoff.getUTCDate() - 29);
+
+  const [all, recent, first] = await Promise.all([
+    prisma.parseUsage.aggregate({
+      where: { userId },
+      _sum: { parseCount: true, estimatedCostCents: true },
+      _count: { _all: true },
+    }),
+    prisma.parseUsage.aggregate({
+      where: { userId, localDate: { gte: cutoff } },
+      _sum: { parseCount: true, estimatedCostCents: true },
+    }),
+    prisma.parseUsage.findFirst({
+      where: { userId },
+      orderBy: { localDate: "asc" },
+      select: { localDate: true },
+    }),
+  ]);
+
+  const totalParses = all._sum.parseCount ?? 0;
+  const totalCostCents = all._sum.estimatedCostCents ?? 0;
+
+  return {
+    totalParses,
+    totalCostCents,
+    daysWithParses: all._count._all,
+    recentParses: recent._sum.parseCount ?? 0,
+    recentCostCents: recent._sum.estimatedCostCents ?? 0,
+    averageCostCents: totalParses > 0 ? totalCostCents / totalParses : null,
+    firstUsedAt: first?.localDate ?? null,
+  };
+}

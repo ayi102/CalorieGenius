@@ -92,15 +92,32 @@ export function MonthHeatmap({ days }: { days: MonthDay[] }) {
                 : "bg-heat-empty"
               : BUCKET_CLASS[bucket(day.score)];
 
+          const onDark = day.score !== null && bucket(day.score) >= 3;
+
           const inner = (
             <span
-              className={`grid aspect-square w-full place-items-center rounded-md text-[11px] tnum transition-transform sm:text-xs ${cellClass} ${
-                day.score !== null && bucket(day.score) >= 3
-                  ? "text-white"
-                  : "text-foreground/80"
-              } ${day.score !== null ? "hover:scale-110" : ""}`}
+              className={`flex aspect-square w-full flex-col items-center justify-center gap-0 rounded-md leading-none tnum transition-transform ${cellClass} ${
+                onDark ? "text-white" : "text-foreground/80"
+              } ${day.score !== null ? "hover:scale-105" : ""}`}
             >
-              {dayNum}
+              <span className="text-[11px] sm:text-xs">{dayNum}</span>
+              {/* Calories under the date. Rendered in hundreds on the narrowest
+                  screens ("1.7k") because four digits will not fit a 44px cell
+                  without shrinking the type past legibility. */}
+              {day.kcal > 0 && (
+                <span
+                  className={`mt-0.5 text-[8px] sm:text-[9px] ${onDark ? "text-white/75" : "text-muted"}`}
+                >
+                  <span className="sm:hidden">
+                    {day.kcal >= 1000
+                      ? `${(day.kcal / 1000).toFixed(1)}k`
+                      : day.kcal}
+                  </span>
+                  <span className="hidden sm:inline">
+                    ({day.kcal.toLocaleString()})
+                  </span>
+                </span>
+              )}
             </span>
           );
 

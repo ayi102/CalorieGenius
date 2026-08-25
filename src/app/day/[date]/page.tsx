@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getDay, getProfile, targetsForProfile } from "@/lib/queries";
+import { getDay, getProfile, getWaterForDay, targetsForProfile } from "@/lib/queries";
 import { addDays, todayIso } from "@/lib/time";
 import { EntryCard } from "@/app/entry-card";
 import { ScoreCard } from "@/app/score-card";
+import { Water } from "@/app/water";
+import { Tabs } from "@/app/tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -18,19 +20,37 @@ export default async function DayPage({ params }: PageProps<"/day/[date]">) {
   if (!profile) return <p className="text-negative">Profile not found.</p>;
 
   const targets = targetsForProfile(profile);
-  const day = await getDay(
-    user.userId,
-    date,
-    profile.timezone,
-    targets,
-    profile.bedtimeMinutes,
-    profile.goal,
-    profile.eatingWindowEnabled
-      ? { start: profile.eatingWindowStart, end: profile.eatingWindowEnd }
-      : null,
-  );
+  const [day, water] = await Promise.all([
+    getDay(
+      user.userId,
+      date,
+      profile.timezone,
+      targets,
+      profile.bedtimeMinutes,
+      profile.goal,
+      profile.eatingWindowEnabled
+        ? { start: profile.eatingWindowStart, end: profile.eatingWindowEnd }
+        : null,
+    ),
+    getWaterForDay(
+      user.userId,
+      date,
+      profile.timezone,
+      profile.weightKg,
+      profile.waterTargetMl,
+    ),
+  ]);
 
   const today = todayIso(profile.timezone);
+
+  /**
+   * Midday on the viewed date, in the user's zone.
+   *
+   * Backfilled drinks need SOME time of day; noon is the neutral choice and,
+   * critically, is far enough from either midnight that no timezone offset can
+   * push it onto an adjacent day.
+   */
+  const backdateTo = new Date(`${date}T12:00:00Z`).toISOString();
   const label = new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -70,24 +90,46 @@ export default async function DayPage({ params }: PageProps<"/day/[date]">) {
         </nav>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-[2fr_1fr]">
-        <section className="flex flex-col gap-3">
-          {day.entries.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted">
-              Nothing logged on this day.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {day.entries.map((entry) => (
-                <EntryCard key={entry.id} entry={entry} />
-              ))}
-            </ul>
-          )}
-        </section>
-        <aside>
-          <ScoreCard score={day.score} />
-        </aside>
-      </div>
+      <Tabs
+        initial="meals"
+        tabs={[
+          {
+            id: "meals",
+            label: "Meals",
+            badge: day.entries.length > 0 ? String(day.entries.length) : undefined,
+            content:
+              day.entries.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
+                  Nothing logged on this day.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {day.entries.map((entry) => (
+                    <EntryCard key={entry.id} entry={entry} />
+                  ))}
+                </ul>
+              ),
+          },
+          {
+            id: "water",
+            label: "Water",
+            badge: `${Math.round((water.totalMl / water.targetMl) * 100)}%`,
+            content: (
+              <Water
+                water={water}
+                units={profile.unitSystem}
+                backdateTo={backdateTo}
+              />
+            ),
+          },
+          {
+            id: "score",
+            label: "Score",
+            badge: day.score ? String(day.score.total) : undefined,
+            content: <ScoreCard score={day.score} />,
+          },
+        ]}
+      />
     </div>
   );
 }

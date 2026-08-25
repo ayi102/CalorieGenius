@@ -27,9 +27,16 @@ import {
 export function Water({
   water,
   units,
+  /**
+   * When present, drinks are recorded on THAT day rather than now — this is what
+   * makes a past day editable. An ISO instant, not a date string, so the server
+   * derives localDate through the same helper every other write uses.
+   */
+  backdateTo,
 }: {
   water: WaterDay;
   units: UnitSystem;
+  backdateTo?: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -54,7 +61,9 @@ export function Water({
     <section className="card p-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-xs uppercase tracking-wide text-muted">Water</h2>
+          <h2 className="text-xs uppercase tracking-wide text-muted">
+            Water{backdateTo ? " (this day)" : ""}
+          </h2>
           <p className="display mt-1 text-3xl leading-none tnum">
             {formatVolume(water.totalMl, units)}
             <span className="ml-1.5 font-sans text-sm text-muted">
@@ -85,7 +94,7 @@ export function Water({
             key={p.label}
             type="button"
             disabled={pending}
-            onClick={() => run(() => addWater(p.ml))}
+            onClick={() => run(() => addWater(p.ml, backdateTo))}
             className="min-h-10 rounded-full border border-border px-3 text-xs hover:border-accent disabled:opacity-50"
           >
             + {p.label}
@@ -108,7 +117,7 @@ export function Water({
             const n = Number(custom);
             if (!Number.isFinite(n) || n <= 0) return;
             // The field is in the user's unit; storage is always millilitres.
-            run(() => addWater(units === "imperial" ? flOzToMl(n) : n));
+            run(() => addWater(units === "imperial" ? flOzToMl(n) : n, backdateTo));
             setCustom("");
             setShowCustom(false);
           }}
