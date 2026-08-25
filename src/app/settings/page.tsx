@@ -1,9 +1,6 @@
 import { requireUser } from "@/lib/auth";
-import { getProfile, getUsageSummary, targetsForProfile } from "@/lib/queries";
+import { getProfile, targetsForProfile } from "@/lib/queries";
 import { SettingsForm } from "./settings-form";
-import { UsageCard } from "./usage-card";
-import { env } from "@/lib/env";
-import { todayIso } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +13,6 @@ export default async function SettingsPage() {
   }
 
   const targets = targetsForProfile(profile);
-  const usage = await getUsageSummary(
-    user.userId,
-    todayIso(profile.timezone),
-  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -30,10 +23,6 @@ export default async function SettingsPage() {
         </p>
       </div>
       <SettingsForm profile={profile} targets={targets} />
-
-      <div className="border-t border-border pt-6">
-        <UsageCard usage={usage} dailyLimit={env.dailyParseLimit()} />
-      </div>
     </div>
   );
 }

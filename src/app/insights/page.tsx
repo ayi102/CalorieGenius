@@ -5,14 +5,17 @@ import {
   getInsight,
   getKnownFacts,
   getProfile,
+  getUsageSummary,
   targetsForProfile,
 } from "@/lib/queries";
+import { env } from "@/lib/env";
 import { addDays, todayIso } from "@/lib/time";
 import { InsightReportSchema } from "@/lib/insights/types";
 import { PatternReportSchema, PATTERN_MIN_DAYS } from "@/lib/insights/patterns";
 import { InsightView } from "./insight-view";
 import { PatternsView } from "./patterns-view";
 import { FactsCard } from "./facts-card";
+import { UsageCard } from "./usage-card";
 import { Tabs } from "../tabs";
 
 export const dynamic = "force-dynamic";
@@ -46,8 +49,9 @@ export default async function InsightsPage({
   const patStart = addDays(today, -(PATTERN_WINDOW_DAYS - 1));
   const targets = targetsForProfile(profile);
 
-  const [facts, weekly, patterns, weekDays, patternDays] = await Promise.all([
+  const [facts, usage, weekly, patterns, weekDays, patternDays] = await Promise.all([
     getKnownFacts(user.userId, today, targets.kcal),
+    getUsageSummary(user.userId, today),
     getInsight(user.userId, wkStart, "weekly"),
     getInsight(user.userId, patStart, "patterns"),
     countTrackedDays(user.userId, wkStart, wkEnd),
@@ -143,6 +147,10 @@ export default async function InsightsPage({
         Written from what you logged. It only knows what you recorded, and it
         isn&apos;t medical advice.
       </p>
+
+      <div className="border-t border-border pt-5">
+        <UsageCard usage={usage} dailyLimit={env.dailyParseLimit()} />
+      </div>
     </div>
   );
 }

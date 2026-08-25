@@ -153,12 +153,14 @@ export function FactsCard({
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <dl className="grid grid-cols-3 gap-2 sm:gap-3">
         {tiles.map((t) => (
-          <div key={t.label} className="card p-3">
-            <dt className="text-xs text-muted">{t.label}</dt>
+          <div key={t.label} className="card p-2.5 sm:p-3">
+            <dt className="text-[11px] leading-tight text-muted sm:text-xs">
+              {t.label}
+            </dt>
             <dd
-              className={`display mt-1 text-xl tnum ${
+              className={`display mt-1 text-lg tnum sm:text-xl ${
                 t.tone === "good"
                   ? "text-positive"
                   : t.tone === "watch"

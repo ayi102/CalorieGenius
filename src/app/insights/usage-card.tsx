@@ -40,27 +40,27 @@ export function UsageCard({
         </p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="card p-3">
-          <dt className="text-xs text-muted">Total lookups</dt>
-          <dd className="display mt-1 text-2xl tnum">{usage.totalParses}</dd>
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+        <div className="card p-2.5 sm:p-3">
+          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Total lookups</dt>
+          <dd className="display mt-1 text-lg tnum sm:text-xl">{usage.totalParses}</dd>
         </div>
-        <div className="card p-3">
-          <dt className="text-xs text-muted">Total cost</dt>
-          <dd className="display mt-1 text-2xl tnum">
+        <div className="card p-2.5 sm:p-3">
+          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Total cost</dt>
+          <dd className="display mt-1 text-lg tnum sm:text-xl">
             {money(usage.totalCostCents)}
           </dd>
         </div>
-        <div className="card p-3">
-          <dt className="text-xs text-muted">Last 30 days</dt>
-          <dd className="display mt-1 text-2xl tnum">{usage.recentParses}</dd>
+        <div className="card p-2.5 sm:p-3">
+          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Last 30 days</dt>
+          <dd className="display mt-1 text-lg tnum sm:text-xl">{usage.recentParses}</dd>
           <dd className="mt-0.5 text-xs text-muted tnum">
             {money(usage.recentCostCents)}
           </dd>
         </div>
-        <div className="card p-3">
-          <dt className="text-xs text-muted">Per lookup</dt>
-          <dd className="display mt-1 text-2xl tnum">
+        <div className="card p-2.5 sm:p-3">
+          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Per lookup</dt>
+          <dd className="display mt-1 text-lg tnum sm:text-xl">
             {usage.averageCostCents === null
               ? "—"
               : money(usage.averageCostCents)}
