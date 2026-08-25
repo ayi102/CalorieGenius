@@ -13,7 +13,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { isoDateToUtc, utcToIsoDate, type IsoDate } from "@/lib/time";
+import { isoDateToUtc, todayIso, utcToIsoDate, type IsoDate } from "@/lib/time";
 
 export const PatternReportSchema = z.object({
   summary: z
@@ -149,9 +149,25 @@ export async function buildPatternSummary(
   periodEnd: IsoDate,
   targets: { kcal: number; protein: number },
   goal: string,
+  /** The user's local today, so the window can stop at yesterday. */
+  today: IsoDate,
 ): Promise<PatternSummary> {
   const start = isoDateToUtc(periodStart);
-  const end = isoDateToUtc(periodEnd);
+
+  /**
+   * Never let the window end on today.
+   *
+   * Today is half-eaten, so including it pulls every average down and reports a
+   * habit that does not exist. A window that already ended in the past is left
+   * exactly as given.
+   *
+   * `today` is passed in rather than read from the server clock: "today" is a
+   * local-calendar fact, and a UTC server can be a day off from the user.
+   */
+  const requestedEnd = isoDateToUtc(periodEnd);
+  const lastComplete = isoDateToUtc(today);
+  lastComplete.setUTCDate(lastComplete.getUTCDate() - 1);
+  const end = requestedEnd > lastComplete ? lastComplete : requestedEnd;
 
   const [entries, weights] = await Promise.all([
     prisma.entry.findMany({
@@ -300,7 +316,7 @@ export async function generatePatternInsight(options: {
   goal: string;
   force?: boolean;
 }): Promise<{ report: PatternReport; cached: boolean; generatedAt: Date; daysTracked: number }> {
-  const { userId, periodStart, periodEnd, targets, goal } = options;
+  const { userId, periodStart, periodEnd, timezone, targets, goal } = options;
   const model = env.anthropicModel();
 
   // The weekday split reads Entry.localDate, which is already in her zone, so
@@ -311,6 +327,7 @@ export async function generatePatternInsight(options: {
     periodEnd,
     targets,
     goal,
+    todayIso(timezone),
   );
 
   if (summary.daysTracked < PATTERN_MIN_DAYS) {

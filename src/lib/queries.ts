@@ -997,6 +997,10 @@ export async function getRecipes(
 export interface KnownFacts {
   windowDays: number;
   daysTracked: number;
+  /** Last COMPLETE day the averages cover — never today. */
+  through: IsoDate | null;
+  /** True when today has entries that are deliberately excluded. */
+  todayExcluded: boolean;
   avgKcal: number | null;
   avgProtein: number | null;
   avgFiber: number | null;
@@ -1035,11 +1039,20 @@ export async function getKnownFacts(
   targetKcal: number,
   windowDays = 30,
 ): Promise<KnownFacts> {
+  /**
+   * Averages run to YESTERDAY, never today.
+   *
+   * Today is half-eaten. Including it drags every average down and makes
+   * "1,405 cal a day" read as a habit when it is really a habit plus one
+   * unfinished morning. Days-on-target has the same problem: a day cannot be
+   * judged against a target it has not finished spending.
+   */
   const end = isoDateToUtc(today);
+  end.setUTCDate(end.getUTCDate() - 1);
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (windowDays - 1));
 
-  const [entries, water, weights] = await Promise.all([
+  const [entries, water, weights, todayCount] = await Promise.all([
     prisma.entry.findMany({
       where: { userId, localDate: { gte: start, lte: end } },
       include: { items: true },
@@ -1049,10 +1062,13 @@ export async function getKnownFacts(
       where: { userId, localDate: { gte: start, lte: end } },
       _sum: { ml: true },
     }),
+    // Weight is a point measurement, not a daily total, so today's weigh-in is
+    // perfectly valid and stays in the trend.
     prisma.weightLog.findMany({
       where: { userId },
       orderBy: { localDate: "asc" },
     }),
+    prisma.entry.count({ where: { userId, localDate: isoDateToUtc(today) } }),
   ]);
 
   const byDay = new Map<string, typeof entries>();
@@ -1113,6 +1129,8 @@ export async function getKnownFacts(
   return {
     windowDays,
     daysTracked,
+    through: daysTracked > 0 ? utcToIsoDate(end) : null,
+    todayExcluded: todayCount > 0,
     avgKcal: mean(dailyKcal) === null ? null : Math.round(mean(dailyKcal)!),
     avgProtein: daysTracked
       ? Math.round(items.reduce((s, i) => s + i.protein, 0) / daysTracked)

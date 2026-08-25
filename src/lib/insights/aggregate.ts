@@ -50,9 +50,25 @@ export async function buildWeekSummary(
   timezone: string,
   targets: Targets,
   goal: string,
+  /** The user's local today, so the window can stop at yesterday. */
+  today: IsoDate,
 ): Promise<WeekSummary> {
   const start = isoDateToUtc(periodStart);
-  const end = isoDateToUtc(periodEnd);
+
+  /**
+   * Never let the window end on today.
+   *
+   * Today is half-eaten, so including it pulls every average down and reports a
+   * habit that does not exist. A window that already ended in the past is left
+   * exactly as given.
+   *
+   * `today` is passed in rather than read from the server clock: "today" is a
+   * local-calendar fact, and a UTC server can be a day off from the user.
+   */
+  const requestedEnd = isoDateToUtc(periodEnd);
+  const lastComplete = isoDateToUtc(today);
+  lastComplete.setUTCDate(lastComplete.getUTCDate() - 1);
+  const end = requestedEnd > lastComplete ? lastComplete : requestedEnd;
 
   const [entries, water, weights] = await Promise.all([
     prisma.entry.findMany({

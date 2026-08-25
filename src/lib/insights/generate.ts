@@ -10,7 +10,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { isoDateToUtc, type IsoDate } from "@/lib/time";
+import { isoDateToUtc, todayIso, type IsoDate } from "@/lib/time";
 import { InsightReportSchema, type InsightReport } from "./types";
 import { buildWeekSummary, type WeekSummary } from "./aggregate";
 import type { Targets } from "@/lib/scoring";
@@ -128,6 +128,7 @@ export async function generateWeeklyInsight(
     timezone,
     targets,
     goal,
+    todayIso(timezone),
   );
 
   if (summary.daysTracked < MIN_DAYS) {
