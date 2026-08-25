@@ -231,32 +231,93 @@ export function RecipePicker({
             <p className="py-8 text-center text-sm text-muted">No match.</p>
           ) : (
             <ul className="flex flex-col divide-y divide-border">
-              {shownFoods.map((f) => (
-                <li key={f.id} className="flex items-center gap-2 py-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm [overflow-wrap:anywhere]">
-                      {f.displayName}
-                    </p>
-                    <p className="tnum mt-0.5 text-xs text-muted">
-                      {f.kcalForDefault} cal ·{" "}
-                      {f.unitIsServing ? "1 serving" : `${Math.round(f.defaultGrams)} g`}
-                      {f.timesLogged > 1 && ` · ${f.timesLogged}×`}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={pending}
-                    onClick={() =>
-                      run(f.id, () =>
-                        quickAddFood(f.id, f.unitIsServing ? 1 : f.defaultGrams),
-                      )
-                    }
-                    className="min-h-9 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
-                  >
-                    {busy === f.id ? "…" : "Add"}
-                  </button>
-                </li>
-              ))}
+              {shownFoods.map((f) => {
+                const expanded = open === f.id;
+                return (
+                  <li key={f.id} className="py-2.5">
+                    <div className="flex items-start gap-2">
+                      {/* Same affordance as a meal: tap the name for nutrition,
+                          tap Add to log it. A single food is often a composite
+                          — a latte, a smoothie — so its macros matter just as
+                          much as a multi-item meal's. */}
+                      <button
+                        type="button"
+                        onClick={() => setOpen(expanded ? null : f.id)}
+                        aria-expanded={expanded}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="text-sm [overflow-wrap:anywhere]">
+                          {f.displayName}
+                          {f.brand && (
+                            <span className="text-muted"> · {f.brand}</span>
+                          )}
+                        </p>
+                        <p className="tnum mt-0.5 text-xs text-muted">
+                          {f.kcalForDefault} cal ·{" "}
+                          {f.unitIsServing
+                            ? "1 serving"
+                            : `${Math.round(f.defaultGrams)} g`}
+                          {f.timesLogged > 1 && ` · ${f.timesLogged}×`}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() =>
+                          run(f.id, () =>
+                            quickAddFood(f.id, f.unitIsServing ? 1 : f.defaultGrams),
+                          )
+                        }
+                        className="min-h-9 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+                      >
+                        {busy === f.id ? "…" : "Add"}
+                      </button>
+                    </div>
+
+                    {expanded && (
+                      <div className="mt-2 rounded-lg bg-surface-raised p-3">
+                        <dl className="grid grid-cols-4 gap-2 text-center">
+                          {[
+                            { l: "cal", v: f.kcalForDefault },
+                            { l: "protein", v: `${f.proteinForDefault} g` },
+                            { l: "carbs", v: `${f.carbsForDefault} g` },
+                            { l: "fat", v: `${f.fatForDefault} g` },
+                          ].map((x) => (
+                            <div key={x.l}>
+                              <dd className="tnum text-sm font-medium">{x.v}</dd>
+                              <dt className="text-[10px] text-muted">{x.l}</dt>
+                            </div>
+                          ))}
+                        </dl>
+                        <p className="mt-2 flex items-baseline justify-between gap-2 border-t border-border pt-2 text-[11px] text-muted">
+                          <span>
+                            {f.fiberForDefault > 0 &&
+                              `${f.fiberForDefault} g fiber · `}
+                            {f.foodGroup.replace("_", " ")} · level{" "}
+                            {f.processedLevel}
+                          </span>
+                          <span>
+                            {f.nutritionSource === "usda"
+                              ? "USDA"
+                              : f.nutritionSource === "openfoodfacts"
+                                ? "label"
+                                : f.nutritionSource === "user"
+                                  ? "yours"
+                                  : "estimate"}
+                          </span>
+                        </p>
+                        <p className="mt-1.5 text-[10px] text-muted">
+                          Per{" "}
+                          {f.unitIsServing
+                            ? "serving"
+                            : `${Math.round(f.defaultGrams)} g portion`}
+                          . Adjust the amount after adding it.
+                        </p>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
 

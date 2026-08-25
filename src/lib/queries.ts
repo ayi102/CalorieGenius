@@ -569,7 +569,15 @@ export interface RememberedFood {
   brand: string | null;
   defaultGrams: number;
   unitIsServing: boolean;
+  /** Full nutrition for the default portion — not just calories. */
   kcalForDefault: number;
+  proteinForDefault: number;
+  carbsForDefault: number;
+  fatForDefault: number;
+  fiberForDefault: number;
+  foodGroup: string;
+  processedLevel: number;
+  nutritionSource: string;
   timesLogged: number;
 }
 
@@ -592,16 +600,27 @@ export async function getRememberedFoods(
     take: limit,
   });
 
-  return rows.map((f) => ({
-    id: f.id,
-    displayName: f.displayName,
-    brand: f.brand,
-    defaultGrams: f.defaultGrams,
-    // A barcode row carries a real label serving; a parsed food does not.
-    unitIsServing: f.barcode !== null,
-    kcalForDefault: Math.round((f.kcalPer100g * f.defaultGrams) / 100),
-    timesLogged: f.timesLogged,
-  }));
+  return rows.map((f) => {
+    // Everything is stored per 100 g; scale once to the default portion.
+    const k = f.defaultGrams / 100;
+    return {
+      id: f.id,
+      displayName: f.displayName,
+      brand: f.brand,
+      defaultGrams: f.defaultGrams,
+      // A barcode row carries a real label serving; a parsed food does not.
+      unitIsServing: f.barcode !== null,
+      kcalForDefault: Math.round(f.kcalPer100g * k),
+      proteinForDefault: Math.round(f.proteinPer100g * k),
+      carbsForDefault: Math.round(f.carbsPer100g * k),
+      fatForDefault: Math.round(f.fatPer100g * k),
+      fiberForDefault: Math.round((f.fiberPer100g ?? 0) * k),
+      foodGroup: f.foodGroup,
+      processedLevel: f.processedLevel,
+      nutritionSource: f.nutritionSource,
+      timesLogged: f.timesLogged,
+    };
+  });
 }
 
 
