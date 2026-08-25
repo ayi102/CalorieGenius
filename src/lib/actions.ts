@@ -1320,3 +1320,159 @@ export async function generateInsight(
   revalidatePath("/insights");
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Tidying the food library
+// ---------------------------------------------------------------------------
+
+/**
+ * Combine several library foods into one named food.
+ *
+ * The problem this solves: anything logged before composites were kept whole
+ * left its ingredients in the library as separate rows — "espresso", "ground
+ * cinnamon", "chocolate milk" instead of "latte". Nobody wants to add three
+ * things to log one drink.
+ *
+ * Sums the components' default portions, stores the result per 100 g like every
+ * other food, and hides the components from THIS user's list. The originals are
+ * not deleted: they may be shared with other users, and past entries still
+ * reference them.
+ */
+export async function combineFoods(
+  foodItemIds: string[],
+  name: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const displayName = name.trim();
+  if (displayName.length < 2) {
+    return { ok: false, error: "Give the combined food a name." };
+  }
+  if (foodItemIds.length < 2) {
+    return { ok: false, error: "Pick at least two foods to combine." };
+  }
+
+  const foods = await prisma.foodItem.findMany({
+    where: {
+      id: { in: foodItemIds },
+      OR: [{ userId: user.userId }, { userId: null }],
+    },
+  });
+  if (foods.length < 2) {
+    return { ok: false, error: "Could not find those foods." };
+  }
+
+  // Sum each component's DEFAULT portion — that is the amount the user would
+  // have added, so the composite means "one of each of these".
+  let grams = 0;
+  const total = { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 };
+  for (const f of foods) {
+    const k = f.defaultGrams / 100;
+    grams += f.defaultGrams;
+    total.kcal += f.kcalPer100g * k;
+    total.protein += f.proteinPer100g * k;
+    total.carbs += f.carbsPer100g * k;
+    total.fat += f.fatPer100g * k;
+    total.fiber += (f.fiberPer100g ?? 0) * k;
+    total.sugar += (f.sugarPer100g ?? 0) * k;
+    total.sodium += (f.sodiumPer100g ?? 0) * k;
+  }
+  if (grams <= 0) return { ok: false, error: "Those foods have no portion size." };
+
+  const per100 = (v: number) => (v * 100) / grams;
+
+  // Dominant food group by calories, and a calorie-weighted processing level —
+  // the same rules the scorer uses, so a combined food scores consistently.
+  const groupKcal = new Map<string, number>();
+  let levelWeighted = 0;
+  for (const f of foods) {
+    const kcal = (f.kcalPer100g * f.defaultGrams) / 100;
+    groupKcal.set(f.foodGroup, (groupKcal.get(f.foodGroup) ?? 0) + kcal);
+    levelWeighted += f.processedLevel * kcal;
+  }
+  const foodGroup =
+    [...groupKcal.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "mixed_dish";
+  const processedLevel =
+    total.kcal > 0 ? Math.round(levelWeighted / total.kcal) : 2;
+
+  // A combined food is the user's own, never shared: they named it, and the
+  // portions they chose are theirs.
+  const normalizedName = normalizeFoodName(displayName);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.foodItem.findFirst({
+        where: { userId: user.userId, normalizedName, brand: null },
+        select: { id: true },
+      });
+
+      const data = {
+        displayName,
+        kcalPer100g: per100(total.kcal),
+        proteinPer100g: per100(total.protein),
+        carbsPer100g: per100(total.carbs),
+        fatPer100g: per100(total.fat),
+        fiberPer100g: per100(total.fiber),
+        sugarPer100g: per100(total.sugar),
+        sodiumPer100g: per100(total.sodium),
+        defaultGrams: grams,
+        foodGroup: foodGroup as never,
+        processedLevel: Math.min(4, Math.max(1, processedLevel)),
+        nutritionSource: "user" as never,
+        lastLoggedAt: new Date(),
+      };
+
+      if (existing) {
+        await tx.foodItem.update({ where: { id: existing.id }, data });
+      } else {
+        await tx.foodItem.create({
+          data: {
+            ...data,
+            userId: user.userId,
+            normalizedName,
+            // Ranked above its own ingredients so it surfaces where they did.
+            timesLogged: foods.reduce((s, f) => s + f.timesLogged, 0) || 1,
+          },
+        });
+      }
+
+      // Hide the ingredients from this user's list, without deleting rows that
+      // other users and past entries still depend on.
+      for (const f of foods) {
+        await tx.hiddenFood.upsert({
+          where: { userId_foodItemId: { userId: user.userId, foodItemId: f.id } },
+          update: {},
+          create: { userId: user.userId, foodItemId: f.id },
+        });
+      }
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not combine those.",
+    };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/** Remove a food from this user's quick-add list. The row itself survives. */
+export async function hideFood(foodItemId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  await prisma.hiddenFood.upsert({
+    where: { userId_foodItemId: { userId: user.userId, foodItemId } },
+    update: {},
+    create: { userId: user.userId, foodItemId },
+  });
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/** Put a hidden food back. */
+export async function unhideAllFoods(): Promise<ActionResult> {
+  const user = await requireUser();
+  await prisma.hiddenFood.deleteMany({ where: { userId: user.userId } });
+  revalidatePath("/");
+  return { ok: true };
+}

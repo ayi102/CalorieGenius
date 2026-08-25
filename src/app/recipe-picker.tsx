@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { quickAddFood, relogEntry } from "@/lib/actions";
+import { combineFoods, hideFood, quickAddFood, relogEntry } from "@/lib/actions";
 import type { RememberedFood, RememberedMeal } from "@/lib/queries";
 import { scoreBand } from "@/lib/scoring";
 
@@ -42,6 +42,27 @@ export function RecipePicker({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<"meals" | "foods">("meals");
+
+  /**
+   * Combine mode.
+   *
+   * Exists because anything logged before composites were kept whole left its
+   * ingredients in the library as separate rows — "espresso", "ground cinnamon",
+   * "chocolate milk" rather than "latte". Selecting them and giving them one
+   * name fixes the list without losing the nutrition already worked out.
+   */
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [combineName, setCombineName] = useState("");
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -230,12 +251,83 @@ export function RecipePicker({
           ) : shownFoods.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted">No match.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-border">
+            <>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {!selecting ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelecting(true)}
+                    className="min-h-9 rounded-full border border-border px-3 text-xs text-muted hover:text-foreground"
+                  >
+                    Combine ingredients into one
+                  </button>
+                ) : (
+                  <>
+                    <input
+                      value={combineName}
+                      onChange={(e) => setCombineName(e.target.value)}
+                      placeholder="Name it, e.g. Latte"
+                      aria-label="Name for the combined food"
+                      className="min-h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 text-sm"
+                    />
+                    <button
+                      type="button"
+                      disabled={
+                        pending || selected.size < 2 || combineName.trim().length < 2
+                      }
+                      onClick={() =>
+                        run("combine", async () => {
+                          const r = await combineFoods(
+                            [...selected],
+                            combineName,
+                          );
+                          if (r.ok) {
+                            setSelecting(false);
+                            setSelected(new Set());
+                            setCombineName("");
+                          }
+                          return r;
+                        })
+                      }
+                      className="min-h-9 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+                    >
+                      {busy === "combine" ? "…" : `Combine ${selected.size}`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelecting(false);
+                        setSelected(new Set());
+                        setCombineName("");
+                      }}
+                      className="min-h-9 rounded-md border border-border px-2.5 text-xs text-muted"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
+              </div>
+              {selecting && (
+                <p className="mb-2 text-[11px] text-muted">
+                  Tick the ingredients that make up one thing — their nutrition is
+                  added together and they leave this list.
+                </p>
+              )}
+              <ul className="flex flex-col divide-y divide-border">
               {shownFoods.map((f) => {
                 const expanded = open === f.id;
                 return (
                   <li key={f.id} className="py-2.5">
                     <div className="flex items-start gap-2">
+                      {selecting && (
+                        <input
+                          type="checkbox"
+                          checked={selected.has(f.id)}
+                          onChange={() => toggle(f.id)}
+                          aria-label={`Select ${f.displayName}`}
+                          className="mt-1 h-4 w-4 shrink-0"
+                        />
+                      )}
                       {/* Same affordance as a meal: tap the name for nutrition,
                           tap Add to log it. A single food is often a composite
                           — a latte, a smoothie — so its macros matter just as
@@ -260,18 +352,20 @@ export function RecipePicker({
                           {f.timesLogged > 1 && ` · ${f.timesLogged}×`}
                         </p>
                       </button>
-                      <button
-                        type="button"
-                        disabled={pending}
-                        onClick={() =>
-                          run(f.id, () =>
-                            quickAddFood(f.id, f.unitIsServing ? 1 : f.defaultGrams),
-                          )
-                        }
-                        className="min-h-9 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
-                      >
-                        {busy === f.id ? "…" : "Add"}
-                      </button>
+                      {!selecting && (
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() =>
+                            run(f.id, () =>
+                              quickAddFood(f.id, f.unitIsServing ? 1 : f.defaultGrams),
+                            )
+                          }
+                          className="min-h-9 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+                        >
+                          {busy === f.id ? "…" : "Add"}
+                        </button>
+                      )}
                     </div>
 
                     {expanded && (
@@ -306,19 +400,30 @@ export function RecipePicker({
                                   : "estimate"}
                           </span>
                         </p>
-                        <p className="mt-1.5 text-[10px] text-muted">
-                          Per{" "}
-                          {f.unitIsServing
-                            ? "serving"
-                            : `${Math.round(f.defaultGrams)} g portion`}
-                          . Adjust the amount after adding it.
-                        </p>
+                        <div className="mt-1.5 flex items-center justify-between gap-2">
+                          <p className="text-[10px] text-muted">
+                            Per{" "}
+                            {f.unitIsServing
+                              ? "serving"
+                              : `${Math.round(f.defaultGrams)} g portion`}
+                            . Adjust after adding.
+                          </p>
+                          <button
+                            type="button"
+                            disabled={pending}
+                            onClick={() => run(f.id, () => hideFood(f.id))}
+                            className="min-h-8 shrink-0 px-2 text-[10px] text-muted hover:text-negative"
+                          >
+                            Hide from this list
+                          </button>
+                        </div>
                       </div>
                     )}
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </>
           )}
 
           {error && <p className="mt-2 text-sm text-negative">{error}</p>}

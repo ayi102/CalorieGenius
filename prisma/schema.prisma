@@ -147,6 +147,7 @@ model Profile {
   waterLogs  WaterLog[]
   weightLogs WeightLog[]
   insights   Insight[]
+  hiddenFoods HiddenFood[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -275,6 +276,7 @@ model FoodItem {
   lastLoggedAt DateTime?
 
   entryItems EntryItem[]
+  hiddenBy   HiddenFood[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -398,4 +400,25 @@ model Insight {
 
   @@unique([userId, periodStart])
   @@index([userId, periodStart])
+}
+
+
+/// A library food this user does not want to see in their own quick-add list.
+///
+/// A separate table rather than a flag on FoodItem because most rows are SHARED
+/// (userId null): hiding "espresso" for one person must not hide it for
+/// everyone. This is also what lets combining ingredients into one named food
+/// tidy the list without destroying data.
+model HiddenFood {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  foodItemId String
+  foodItem   FoodItem @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, foodItemId])
+  @@index([userId])
 }

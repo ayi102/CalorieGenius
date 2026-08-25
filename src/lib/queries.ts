@@ -589,12 +589,15 @@ export interface RememberedFood {
  */
 export async function getRememberedFoods(
   userId: string,
-  limit = 12,
+  limit = 40,
 ): Promise<RememberedFood[]> {
   const rows = await prisma.foodItem.findMany({
     where: {
       OR: [{ userId }, { userId: null }],
       timesLogged: { gt: 0 },
+      // Ingredients folded into a combined food are hidden for this user only —
+      // the rows survive for everyone else and for past entries.
+      hiddenBy: { none: { userId } },
     },
     orderBy: [{ timesLogged: "desc" }, { lastLoggedAt: "desc" }],
     take: limit,
