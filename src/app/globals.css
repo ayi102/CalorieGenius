@@ -341,3 +341,46 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/*
+ * Bottom-sheet sizing.
+ *
+ * Written as real CSS rather than utility classes for two reasons, both of which
+ * broke this on iOS:
+ *
+ * 1. Tailwind emits arbitrary-value utilities in its own order, so writing
+ *    `max-h-[85vh] max-h-[85dvh]` does NOT make dvh win — it emitted the dvh
+ *    rule first, so vh won. `vh` on iOS is measured against the largest
+ *    viewport, with the browser chrome hidden, so the sheet extended under
+ *    Safari's toolbar and part of its scroll area sat off-screen. An @supports
+ *    block guarantees the order.
+ *
+ * 2. The scroll area gets its OWN definite max-height instead of relying on
+ *    `flex: 1` inside a max-height parent. iOS Safari frequently fails to
+ *    resolve a definite height for a flex child that way, and `overflow-y: auto`
+ *    with no definite height has nothing to overflow — the panel just grows past
+ *    the screen and nothing scrolls, which is exactly what it felt like.
+ */
+.sheet-panel {
+  max-height: 85vh;
+}
+
+.sheet-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+  /* Stop the scroll chaining to the page behind the sheet. */
+  overscroll-behavior: contain;
+  /* Claim the vertical axis so Safari does not treat the drag as a page scroll. */
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+@supports (height: 100dvh) {
+  .sheet-panel {
+    max-height: 85dvh;
+  }
+  .sheet-scroll {
+    max-height: 60dvh;
+  }
+}

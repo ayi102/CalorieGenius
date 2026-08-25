@@ -138,7 +138,7 @@ export function RecipePicker({
 
       {/* A bottom sheet on phones, a centred dialog on wider screens. */}
       <div
-        className="relative flex max-h-[85vh] max-h-[85dvh] w-full flex-col rounded-t-2xl border border-border bg-surface shadow-raised sm:max-w-lg sm:rounded-2xl"
+        className="sheet-panel relative flex w-full flex-col rounded-t-2xl border border-border bg-surface shadow-raised sm:max-w-lg sm:rounded-2xl"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -187,7 +187,7 @@ export function RecipePicker({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 py-3">
+        <div className="sheet-scroll min-h-0 flex-1 px-4 py-3">
           {tab === "mine" ? (
             shownRecipes.length === 0 ? (
               <div className="py-8 text-center">
