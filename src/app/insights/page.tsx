@@ -47,7 +47,7 @@ export default async function InsightsPage({
   const targets = targetsForProfile(profile);
 
   const [facts, weekly, patterns, weekDays, patternDays] = await Promise.all([
-    getKnownFacts(user.userId, today, targets.kcal),
+    getKnownFacts(user.userId, today, targets.kcal, profile.goal),
     getInsight(user.userId, wkStart, "weekly"),
     getInsight(user.userId, patStart, "patterns"),
     countTrackedDays(user.userId, wkStart, wkEnd),

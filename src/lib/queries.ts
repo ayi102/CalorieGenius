@@ -15,6 +15,7 @@ import {
   computeDayScore,
   computeMealScore,
   computeTargets,
+  isDayOnTarget,
   type ActivityLevel,
   type DayScore,
   type Goal,
@@ -438,9 +439,9 @@ export async function getMonth(
         mean(tracked.map((d) => d.mealCount)) === null
           ? null
           : Math.round(mean(tracked.map((d) => d.mealCount))! * 10) / 10,
-      daysOnTarget: tracked.filter(
-        (d) => Math.abs(d.kcal - targets.kcal) / targets.kcal <= 0.1,
-      ).length,
+      // Same goal-aware rule as the insights page, so the two never disagree.
+      daysOnTarget: tracked.filter((d) => isDayOnTarget(d.kcal, targets.kcal, goal))
+        .length,
       bestDay: ranked[0] ? { date: ranked[0].date, score: ranked[0].score! } : null,
       worstDay:
         ranked.length > 1
@@ -1037,6 +1038,7 @@ export async function getKnownFacts(
   userId: string,
   today: IsoDate,
   targetKcal: number,
+  goal: Goal,
   windowDays = 30,
 ): Promise<KnownFacts> {
   /**
@@ -1150,9 +1152,8 @@ export async function getKnownFacts(
     daysWithEatingOut,
     ultraProcessedPct:
       totalKcal > 0 ? Math.round((ultraKcal / totalKcal) * 100) : null,
-    daysOnTarget: dailyKcal.filter(
-      (k) => Math.abs(k - targetKcal) / targetKcal <= 0.1,
-    ).length,
+    daysOnTarget: dailyKcal.filter((k) => isDayOnTarget(k, targetKcal, goal))
+      .length,
     targetKcal,
     weight: {
       startKg: weights[0]?.weightKg ?? null,

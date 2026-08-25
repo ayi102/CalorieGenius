@@ -12,6 +12,7 @@ import {
   computeDayScore,
   computeMealScore,
   computeTargets,
+  isDayOnTarget,
   scoreBand,
   type ScoreItem,
   type TargetInput,
@@ -617,6 +618,39 @@ check("target scales with bodyweight", waterTarget(70, null), 2450);
 check("target for a heavier person", waterTarget(90, null), 3150);
 check("explicit override wins", waterTarget(70, 3000), 3000);
 check("falls back without a weight", waterTarget(null, null), 2500);
+
+// ---------------------------------------------------------------------------
+// isDayOnTarget — asymmetric by goal
+// ---------------------------------------------------------------------------
+section("isDayOnTarget");
+
+const T = 1800;
+
+// The case that prompted this: 1,579 against an 1,800 target on a loss goal is
+// 12% UNDER. A symmetric +/-10% band called that a miss, which is backwards —
+// eating under budget is the entire point of a loss goal.
+check("1,579 of 1,800 counts on a loss goal", isDayOnTarget(1579, T, "lose"), true);
+check("2,681 of 1,800 does not", isDayOnTarget(2681, T, "lose"), false);
+
+check("exactly on target counts", isDayOnTarget(1800, T, "lose"), true);
+check("2% over is rounding, not a miss", isDayOnTarget(1836, T, "lose"), true);
+check("5% over is a miss", isDayOnTarget(1890, T, "lose"), false);
+
+// ...but under-eating is not a win. 1,080 is the 60% floor.
+check("half the target does NOT count", isDayOnTarget(900, T, "lose"), false);
+check("just above the floor counts", isDayOnTarget(1100, T, "lose"), true);
+
+// Maintain stays symmetric: both directions are equally wrong.
+check("maintain, 10% under counts", isDayOnTarget(1620, T, "maintain"), true);
+check("maintain, 12% under does not", isDayOnTarget(1580, T, "maintain"), false);
+check("maintain, 12% over does not", isDayOnTarget(2020, T, "maintain"), false);
+
+// Gain mirrors lose.
+check("gain, at target counts", isDayOnTarget(1800, T, "gain"), true);
+check("gain, 20% over counts", isDayOnTarget(2160, T, "gain"), true);
+check("gain, 12% under does not", isDayOnTarget(1580, T, "gain"), false);
+
+check("a zero target is never on target", isDayOnTarget(1500, 0, "lose"), false);
 
 // ---------------------------------------------------------------------------
 console.log(`\n${checks - failures}/${checks} checks passed.`);
