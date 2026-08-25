@@ -58,7 +58,7 @@ export function FactsCard({
     tone?: "good" | "watch" | null;
   }[] = [
     {
-      label: "Calories",
+      label: "Avg Calories",
       value: facts.avgKcal === null ? "—" : facts.avgKcal.toLocaleString(),
       sub: `of ${facts.targetKcal.toLocaleString()}`,
     },

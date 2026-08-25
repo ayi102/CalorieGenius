@@ -41,31 +41,38 @@ export function UsageCard({
       </div>
 
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-        <div className="card p-2.5 sm:p-3">
-          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Total lookups</dt>
-          <dd className="display mt-1 text-lg tnum sm:text-xl">{usage.totalParses}</dd>
-        </div>
-        <div className="card p-2.5 sm:p-3">
-          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Total cost</dt>
-          <dd className="display mt-1 text-lg tnum sm:text-xl">
-            {money(usage.totalCostCents)}
-          </dd>
-        </div>
-        <div className="card p-2.5 sm:p-3">
-          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Last 30 days</dt>
-          <dd className="display mt-1 text-lg tnum sm:text-xl">{usage.recentParses}</dd>
-          <dd className="mt-0.5 text-xs text-muted tnum">
-            {money(usage.recentCostCents)}
-          </dd>
-        </div>
-        <div className="card p-2.5 sm:p-3">
-          <dt className="text-[11px] leading-tight text-muted sm:text-xs">Per lookup</dt>
-          <dd className="display mt-1 text-lg tnum sm:text-xl">
-            {usage.averageCostCents === null
-              ? "—"
-              : money(usage.averageCostCents)}
-          </dd>
-        </div>
+        {[
+          { label: "Total lookups", value: String(usage.totalParses) },
+          { label: "Total cost", value: money(usage.totalCostCents) },
+          {
+            label: "Last 30 days",
+            value: String(usage.recentParses),
+            sub: money(usage.recentCostCents),
+          },
+          {
+            label: "Per lookup",
+            value:
+              usage.averageCostCents === null
+                ? "—"
+                : money(usage.averageCostCents),
+          },
+        ].map((t) => (
+          <div
+            key={t.label}
+            className="card flex min-w-0 flex-col items-center justify-center px-1.5 py-3 text-center sm:px-3"
+          >
+            <dt className="w-full truncate text-[11px] leading-none text-muted sm:text-xs">
+              {t.label}
+            </dt>
+            <dd className="display mt-1.5 w-full truncate text-xl leading-none tnum sm:text-2xl">
+              {t.value}
+            </dd>
+            {/* Always present so tiles in a row keep the same height. */}
+            <dd className="mt-1 w-full truncate text-[10px] leading-none text-muted sm:text-[11px]">
+              {t.sub ?? "\u00A0"}
+            </dd>
+          </div>
+        ))}
       </dl>
 
       <p className="text-xs text-muted">
