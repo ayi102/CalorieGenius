@@ -158,12 +158,18 @@ export function FactsCard({
 
       <dl className="grid grid-cols-3 gap-2 sm:gap-3">
         {tiles.map((t) => (
-          <div key={t.label} className="card p-2.5 sm:p-3">
-            <dt className="text-[11px] leading-tight text-muted sm:text-xs">
+          <div
+            key={t.label}
+            // Centered: a ragged left edge across nine narrow tiles reads as
+            // broken rather than deliberate. min-w-0 lets a long value shrink
+            // instead of pushing out of the card.
+            className="card flex min-w-0 flex-col items-center justify-center px-1.5 py-3 text-center sm:px-3"
+          >
+            <dt className="w-full truncate text-[11px] leading-none text-muted sm:text-xs">
               {t.label}
             </dt>
             <dd
-              className={`display mt-1 text-lg tnum sm:text-xl ${
+              className={`display mt-1.5 w-full truncate text-xl leading-none tnum sm:text-2xl ${
                 t.tone === "good"
                   ? "text-positive"
                   : t.tone === "watch"
@@ -173,7 +179,11 @@ export function FactsCard({
             >
               {t.value}
             </dd>
-            {t.sub && <dd className="mt-0.5 text-[11px] text-muted">{t.sub}</dd>}
+            {/* Always rendered, even when empty, so tiles in a row keep the
+                same height. */}
+            <dd className="mt-1 w-full truncate text-[10px] leading-none text-muted sm:text-[11px]">
+              {t.sub ?? "\u00A0"}
+            </dd>
           </div>
         ))}
       </dl>
