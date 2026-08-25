@@ -81,6 +81,11 @@ export const ParsedItemSchema = z.object({
 });
 
 export const ParsedMealSchema = z.object({
+  mealName: z
+    .string()
+    .describe(
+      'A short human name for this meal, 2-4 words, Title Case — how they would refer to it out loud. "Homemade Coffee", "Greek Yogurt Bowl", "Chicken And Rice", "Salmon Dinner". Never a comma-separated ingredient list, and never longer than about 30 characters.',
+    ),
   items: z.array(ParsedItemSchema).describe("One entry per distinct food or drink."),
   restaurantName: z
     .string()

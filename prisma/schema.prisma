@@ -171,6 +171,14 @@ model Entry {
   mealType MealType
   source   EntrySource
 
+  /// A short human name for the meal, e.g. "Homemade Coffee" or "Greek Yogurt
+  /// Bowl". Written by the parser, editable by the user.
+  ///
+  /// Exists because a raw prompt makes a terrible card title: nobody wants to
+  /// read "espresso, ground cinnamon, chocolate milk" to recognise their coffee.
+  /// The prompt is kept in rawText; this is what gets displayed.
+  title          String?
+
   /// Exactly what the user typed, kept verbatim. Enables re-parsing after a
   /// prompt improvement, and is the key into ParseCache.
   rawText        String?

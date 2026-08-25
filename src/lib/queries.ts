@@ -152,6 +152,7 @@ export interface DayEntryView {
   localMinutes: number;
   mealType: MealType;
   source: string;
+  title: string | null;
   rawText: string | null;
   restaurantName: string | null;
   items: DayItemView[];
@@ -211,6 +212,7 @@ export async function getDay(
       localMinutes: toLocalMinutes(e.eatenAt, timezone),
       mealType: e.mealType,
       source: e.source,
+      title: e.title,
       rawText: e.rawText,
       restaurantName: e.restaurantName,
       items,
@@ -459,6 +461,9 @@ export async function getMonth(
 export interface RememberedMeal {
   /** The most recent entry with this text — the one re-logging copies. */
   entryId: string;
+  /** The card title, e.g. "Homemade Coffee". */
+  title: string;
+  /** What she typed. Secondary — shown small, under the title. */
   rawText: string;
   restaurantName: string | null;
   itemCount: number;
@@ -495,21 +500,23 @@ export async function getRememberedMeals(
   const groups = await prisma.$queryRaw<
     {
       rawText: string;
+      title: string | null;
       times: bigint;
       lastAt: Date;
       entryId: string;
     }[]
   >`
-    SELECT DISTINCT ON (lower(btrim(e."rawText")))
+    SELECT DISTINCT ON (lower(btrim(coalesce(e.title, e."rawText"))))
       e."rawText"          AS "rawText",
-      count(*) OVER (PARTITION BY lower(btrim(e."rawText"))) AS times,
-      max(e."eatenAt") OVER (PARTITION BY lower(btrim(e."rawText"))) AS "lastAt",
+      e.title              AS title,
+      count(*) OVER (PARTITION BY lower(btrim(coalesce(e.title, e."rawText")))) AS times,
+      max(e."eatenAt") OVER (PARTITION BY lower(btrim(coalesce(e.title, e."rawText")))) AS "lastAt",
       e.id                 AS "entryId"
     FROM "Entry" e
     WHERE e."userId" = ${userId}
-      AND e."rawText" IS NOT NULL
-      AND btrim(e."rawText") <> ''
-    ORDER BY lower(btrim(e."rawText")), e."eatenAt" DESC
+      AND coalesce(e.title, e."rawText") IS NOT NULL
+      AND btrim(coalesce(e.title, e."rawText")) <> ''
+    ORDER BY lower(btrim(coalesce(e.title, e."rawText"))), e."eatenAt" DESC
   `;
 
   if (groups.length === 0) return [];
@@ -536,6 +543,8 @@ export async function getRememberedMeals(
 
       return {
         entryId: g.entryId,
+        // Older entries predate auto-titling; fall back to their text.
+        title: g.title?.trim() || g.rawText,
         rawText: g.rawText,
         restaurantName: entry.restaurantName,
         itemCount: entry.items.length,

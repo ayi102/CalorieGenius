@@ -185,6 +185,7 @@ export function EntryBox({
     startSave(async () => {
       const result = await saveEntry({
         rawText: preview.rawText!,
+        mealName: preview.mealName,
         eatenAtIso: preview.eatenAtIso!,
         restaurantName: preview.restaurantName ?? null,
         source: preview.restaurantName ? "restaurant" : "text",
@@ -434,7 +435,11 @@ export function EntryBox({
         <div className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between gap-3">
             <h2 className="text-sm font-medium">
-              Check this before saving
+              {preview.mealName ? (
+                <span className="display text-base">{preview.mealName}</span>
+              ) : (
+                "Check this before saving"
+              )}
               {preview.cached && (
                 <span className="ml-2 text-xs font-normal text-muted">
                   (from cache — no API call)

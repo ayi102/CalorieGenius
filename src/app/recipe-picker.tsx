@@ -336,11 +336,12 @@ export function RecipePicker({
                           aria-expanded={expanded}
                           className="min-w-0 flex-1 text-left"
                         >
-                          <p className="text-sm [overflow-wrap:anywhere]">
-                            {m.rawText}
+                          <p className="text-sm font-medium [overflow-wrap:anywhere]">
+                            {m.title}
                           </p>
                           <p className="tnum mt-0.5 text-xs text-muted">
-                            {m.kcal} cal · {m.protein} g protein
+                            {m.kcal} cal · {m.protein} g protein ·{" "}
+                            {m.itemCount} {m.itemCount === 1 ? "ingredient" : "ingredients"}
                             {m.timesLogged > 1 && ` · ${m.timesLogged}×`}
                             {m.restaurantName && ` · ${m.restaurantName}`}
                           </p>
@@ -397,6 +398,11 @@ export function RecipePicker({
                               </li>
                             ))}
                           </ul>
+                          {m.rawText !== m.title && (
+                            <p className="mt-2 border-t border-border pt-2 text-[11px] text-muted [overflow-wrap:anywhere]">
+                              You typed: {m.rawText}
+                            </p>
+                          )}
                         </div>
                       )}
                     </li>

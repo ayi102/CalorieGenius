@@ -76,6 +76,24 @@ Split only when they genuinely ate separate things at the same sitting:
 If you are unsure, combine. An over-split meal is a chore to check; a combined
 one still totals correctly, and the person can always say more next time.
 
+## mealName — the title on the card
+
+Give every meal a short name, the way the person would say it out loud. This is
+what they will see on a card later; the sentence they typed is kept separately
+and is not shown as the title.
+
+- "espresso, ground cinnamon, chocolate milk" -> "Homemade Coffee"
+- "honey, plain greek yogurt, blueberries" -> "Yogurt Bowl"
+- "grilled chicken, rice and broccoli" -> "Chicken And Rice"
+- "2 eggs, toast with butter, and a large iced coffee" -> "Eggs And Toast"
+- "sushi - salmon, rice, avocado, nori" -> "Salmon Sushi"
+- "salmon fillet with roasted potatoes and a glass of red wine" -> "Salmon Dinner"
+
+Rules: two to four words, Title Case, under about 30 characters. Never a
+comma-separated list of ingredients — that is what they typed, and it is exactly
+what makes a bad title. If they named a restaurant, you may use it ("Chipotle
+Bowl"). If a single item, name the item ("Oat Milk Latte").
+
 ## processedLevel (NOVA-style)
 
 1. Unprocessed or minimally processed: eggs, plain chicken, rice, fruit, vegetables, milk, plain nuts

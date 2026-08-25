@@ -282,6 +282,7 @@ export interface AnalyzeResult {
   /** Set when the daily cap is hit, so the UI can offer manual entry instead. */
   limitReached?: boolean;
   items?: PreviewItem[];
+  mealName?: string;
   restaurantName?: string | null;
   note?: string;
   isFood?: boolean;
@@ -356,6 +357,7 @@ export async function analyzeEntry(form: FormData): Promise<AnalyzeResult> {
         provenance: i.provenance,
         lookupUnavailable: i.lookupUnavailable,
       })),
+      mealName: outcome.mealName,
       restaurantName: outcome.restaurantName,
       note: outcome.note,
       isFood: true,
@@ -380,6 +382,8 @@ export async function analyzeEntry(form: FormData): Promise<AnalyzeResult> {
 
 export interface SaveEntryInput {
   rawText: string;
+  /** The card title. Falls back to the raw text if the parser gave none. */
+  mealName?: string;
   eatenAtIso: string;
   restaurantName: string | null;
   source: "text" | "photo" | "barcode" | "restaurant" | "quickadd" | "manual";
@@ -419,6 +423,7 @@ export async function saveEntry(input: SaveEntryInput): Promise<ActionResult> {
         localDate,
         mealType,
         source: input.source,
+        title: input.mealName?.trim() || null,
         rawText: input.rawText,
         restaurantName: input.restaurantName,
         items: {
@@ -974,6 +979,7 @@ export async function relogEntry(
       // 8am is breakfast and at 8pm is dinner.
       mealType: guessMealType(eatenAt, user.timezone),
       source: "quickadd",
+      title: source.title,
       rawText: source.rawText,
       restaurantName: source.restaurantName,
       items: {
@@ -1058,6 +1064,7 @@ export async function quickAddFood(
       localDate: toLocalDate(eatenAt, user.timezone),
       mealType: guessMealType(eatenAt, user.timezone),
       source: "quickadd",
+      title: food.displayName,
       rawText: food.displayName,
       restaurantName: food.restaurantName,
       items: {
@@ -1611,6 +1618,7 @@ export async function logRecipe(
         localDate: toLocalDate(eatenAt, user.timezone),
         mealType: guessMealType(eatenAt, user.timezone),
         source: "quickadd",
+        title: recipe.name,
         rawText: recipe.name,
         items: {
           create: recipe.items.map((i) => ({

@@ -18,6 +18,8 @@ import { ParsedMealSchema, type ParseContext, type ParsedMeal } from "./types";
 
 export interface ResolveOutcome {
   items: GroundedItem[];
+  /** Short human title for the card, e.g. "Homemade Coffee". */
+  mealName: string;
   restaurantName: string | null;
   /** The parser's note about assumptions, for display. */
   note: string;
@@ -162,6 +164,7 @@ export async function resolveEntry(
 
   return {
     items,
+    mealName: meal.mealName?.trim() || text.slice(0, 40),
     restaurantName,
     note: meal.note,
     isFood: meal.isFood,

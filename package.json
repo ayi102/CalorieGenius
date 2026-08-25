@@ -20,7 +20,8 @@
     "check:api": "tsx scripts/check-api.ts",
     "check:barcode": "tsx scripts/check-barcode.ts",
     "db:local": "tsx scripts/use-db.ts local",
-    "db:cloud": "tsx scripts/use-db.ts cloud"
+    "db:cloud": "tsx scripts/use-db.ts cloud",
+    "backfill:titles": "tsx scripts/backfill-titles.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

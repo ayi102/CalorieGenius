@@ -336,9 +336,15 @@ export function EntryCard({ entry }: { entry: DayEntryView }) {
   return (
     <li className="card p-3">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        {/* The dish name leads; the meal slot is context, not the headline. */}
         <span className="text-sm font-medium">
-          {MEAL_LABEL[entry.mealType] ?? entry.mealType}
+          {entry.title ?? MEAL_LABEL[entry.mealType] ?? entry.mealType}
         </span>
+        {entry.title && (
+          <span className="text-xs text-muted">
+            {MEAL_LABEL[entry.mealType] ?? entry.mealType}
+          </span>
+        )}
 
         {editingTime ? (
           <span className="flex items-center gap-1">
