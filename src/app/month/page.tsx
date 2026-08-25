@@ -66,7 +66,8 @@ export default async function MonthPage({ searchParams }: PageProps<"/month">) {
         <div className="flex-1">
           <h1 className="display text-2xl">{monthLabel}</h1>
           <p className="text-sm text-muted">
-            {s.trackedDays} of {s.totalDaysElapsed} days tracked
+            {s.trackedDays} of {s.totalDaysElapsed} complete days tracked
+            {s.todayExcluded && " · today not counted yet"}
           </p>
         </div>
         <nav className="flex gap-1.5 text-sm">

@@ -307,6 +307,8 @@ export interface MonthDay {
   protein: number;
   mealCount: number;
   isFuture: boolean;
+  /** Today is shown on the calendar but excluded from every average. */
+  isToday: boolean;
 }
 
 export interface MonthView {
@@ -314,6 +316,8 @@ export interface MonthView {
   days: MonthDay[];
   summary: {
     trackedDays: number;
+    /** True when today has entries that are deliberately left out. */
+    todayExcluded: boolean;
     totalDaysElapsed: number;
     /** Mean score over TRACKED days only. */
     averageScore: number | null;
@@ -392,11 +396,21 @@ export async function getMonth(
       mealCount: entries.length,
       // Future days render as empty rather than as untracked failures.
       isFuture: date > today,
+      isToday: date === today,
     };
   });
 
-  const tracked = days.filter((d) => d.score !== null);
-  const elapsed = days.filter((d) => !d.isFuture).length;
+  /**
+   * Averages use COMPLETE days only.
+   *
+   * Today is half-eaten, so including it drags the month's average down and
+   * reports an intake that never happened. It still appears on the calendar —
+   * seeing today's progress there is the point — it just does not vote in any
+   * average, in days-on-target, or in best/worst.
+   */
+  const tracked = days.filter((d) => d.score !== null && !d.isToday);
+  const elapsed = days.filter((d) => !d.isFuture && !d.isToday).length;
+  const todayHasEntries = days.some((d) => d.isToday && d.score !== null);
 
   const mean = (xs: number[]) =>
     xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -426,6 +440,7 @@ export async function getMonth(
     days,
     summary: {
       trackedDays: tracked.length,
+      todayExcluded: todayHasEntries,
       totalDaysElapsed: elapsed,
       averageScore:
         mean(tracked.map((d) => d.score!)) === null

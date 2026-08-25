@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useScrollLock } from "@/app/use-scroll-lock";
 
 /**
  * Full-screen barcode scanner.
@@ -66,14 +67,13 @@ export function BarcodeScanner({
     [onDetected],
   );
 
-  // Lock background scrolling while the overlay is open, so dragging on the
-  // camera view doesn't scroll the page behind it.
+  // The same iOS-safe lock the picker uses, so dragging on the camera view
+  // cannot scroll the page behind it.
+  useScrollLock(true);
+
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     closeRef.current?.focus();
     return () => {
-      document.body.style.overflow = prev;
       // Closing must not hand focus back to a text field: on a phone that opens
       // the keyboard over the page the user just returned to.
       const active = document.activeElement;

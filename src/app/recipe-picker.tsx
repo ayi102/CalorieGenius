@@ -11,6 +11,7 @@ import {
 } from "@/lib/actions";
 import type { RecipeView, RememberedMeal } from "@/lib/queries";
 import { scoreBand } from "@/lib/scoring";
+import { useScrollLock } from "@/app/use-scroll-lock";
 
 const BAND: Record<string, string> = {
   none: "bg-score-none text-muted",
@@ -76,17 +77,14 @@ export function RecipePicker({
   const [servingsFor, setServingsFor] = useState<Record<string, string>>({});
 
 
+  useScrollLock(true);
+
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
   function run(key: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
@@ -140,7 +138,7 @@ export function RecipePicker({
 
       {/* A bottom sheet on phones, a centred dialog on wider screens. */}
       <div
-        className="relative flex max-h-[85vh] w-full flex-col rounded-t-2xl border border-border bg-surface shadow-raised sm:max-w-lg sm:rounded-2xl"
+        className="relative flex max-h-[85vh] max-h-[85dvh] w-full flex-col rounded-t-2xl border border-border bg-surface shadow-raised sm:max-w-lg sm:rounded-2xl"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -189,7 +187,7 @@ export function RecipePicker({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 py-3">
           {tab === "mine" ? (
             shownRecipes.length === 0 ? (
               <div className="py-8 text-center">
