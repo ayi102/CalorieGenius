@@ -51,6 +51,7 @@ export function RecipePicker({
    * "chocolate milk" rather than "latte". Selecting them and giving them one
    * name fixes the list without losing the nutrition already worked out.
    */
+  const [showComponents, setShowComponents] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [combineName, setCombineName] = useState("");
@@ -95,9 +96,21 @@ export function RecipePicker({
   const shownMeals = needle
     ? meals.filter((m) => m.rawText.toLowerCase().includes(needle))
     : meals;
-  const shownFoods = needle
+  const matchedFoods = needle
     ? foods.filter((f) => f.displayName.toLowerCase().includes(needle))
     : foods;
+
+  /**
+   * Split by what the log already knows.
+   *
+   * A food she has eaten on its own is something she chooses; one that has only
+   * ever appeared inside a meal is a component of it, and the meal — which
+   * carries the words she typed — is the better thing to re-log. Deriving this
+   * means she never has to tell the app which is which.
+   */
+  const standalone = matchedFoods.filter((f) => f.soloCount > 0);
+  const components = matchedFoods.filter((f) => f.soloCount === 0);
+  const shownFoods = showComponents ? components : standalone;
 
   return (
     <div
@@ -248,10 +261,34 @@ export function RecipePicker({
                 })}
               </ul>
             )
-          ) : shownFoods.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted">No match.</p>
+          ) : matchedFoods.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted">
+              {foods.length === 0
+                ? "Nothing saved yet."
+                : "No match."}
+            </p>
           ) : (
             <>
+              {/* Where the one-tap answer actually lives. */}
+              {components.length > 0 && (
+                <div className="mb-3 rounded-lg bg-surface-raised p-3">
+                  <p className="text-xs text-muted">
+                    {showComponents
+                      ? `These ${components.length} only ever appeared inside a meal. To log the whole thing in one tap, use the Meals list.`
+                      : `${components.length} more are parts of meals rather than things you've eaten alone — the Meals list logs those in one tap.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowComponents((v) => !v)}
+                    className="mt-1.5 min-h-8 text-xs font-medium underline decoration-border underline-offset-4 hover:decoration-foreground"
+                  >
+                    {showComponents
+                      ? "Back to foods you eat on their own"
+                      : `Show meal parts (${components.length})`}
+                  </button>
+                </div>
+              )}
+
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 {!selecting ? (
                   <button
@@ -311,6 +348,12 @@ export function RecipePicker({
                 <p className="mb-2 text-[11px] text-muted">
                   Tick the ingredients that make up one thing — their nutrition is
                   added together and they leave this list.
+                </p>
+              )}
+              {shownFoods.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted">
+                  Nothing here yet — everything you&apos;ve logged came as part of
+                  a meal.
                 </p>
               )}
               <ul className="flex flex-col divide-y divide-border">

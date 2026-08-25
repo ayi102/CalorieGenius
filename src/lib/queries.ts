@@ -9,6 +9,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import {
   ageFrom,
   computeDayScore,
@@ -579,6 +580,15 @@ export interface RememberedFood {
   processedLevel: number;
   nutritionSource: string;
   timesLogged: number;
+  /**
+   * How often this food has been the ONLY thing in an entry.
+   *
+   * Zero means it has only ever appeared alongside other foods — so it is a
+   * component of a meal, and the meal (which carries the name she typed) is the
+   * better thing to re-log. Used to rank, not to hide: a food she has never
+   * eaten alone is still one she might choose to.
+   */
+  soloCount: number;
 }
 
 /**
@@ -603,6 +613,30 @@ export async function getRememberedFoods(
     take: limit,
   });
 
+  /**
+   * How many times each of these foods was the sole item of an entry.
+   *
+   * Derived rather than asked of the user: the log already records whether she
+   * ate a thing on its own or as part of something, so there is no reason to
+   * make her tell the app which is which.
+   */
+  const soloRows =
+    rows.length === 0
+      ? []
+      : await prisma.$queryRaw<{ foodItemId: string; solo: bigint }[]>`
+          SELECT i."foodItemId", count(*) AS solo
+          FROM "EntryItem" i
+          JOIN "Entry" e ON e.id = i."entryId"
+          JOIN (
+            SELECT "entryId", count(*) AS n FROM "EntryItem" GROUP BY "entryId"
+          ) c ON c."entryId" = i."entryId"
+          WHERE e."userId" = ${userId}
+            AND c.n = 1
+            AND i."foodItemId" IN (${Prisma.join(rows.map((r) => r.id))})
+          GROUP BY i."foodItemId"
+        `;
+  const soloBy = new Map(soloRows.map((r) => [r.foodItemId, Number(r.solo)]));
+
   return rows.map((f) => {
     // Everything is stored per 100 g; scale once to the default portion.
     const k = f.defaultGrams / 100;
@@ -622,6 +656,8 @@ export async function getRememberedFoods(
       processedLevel: f.processedLevel,
       nutritionSource: f.nutritionSource,
       timesLogged: f.timesLogged,
+      // A barcode product is inherently standalone — it came out of a packet.
+      soloCount: soloBy.get(f.id) ?? (f.barcode !== null ? 1 : 0),
     };
   });
 }
