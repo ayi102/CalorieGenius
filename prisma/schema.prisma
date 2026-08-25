@@ -148,6 +148,7 @@ model Profile {
   weightLogs WeightLog[]
   insights   Insight[]
   hiddenFoods HiddenFood[]
+  recipes    Recipe[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -421,4 +422,75 @@ model HiddenFood {
 
   @@unique([userId, foodItemId])
   @@index([userId])
+}
+
+
+/// A recipe the user saved deliberately.
+///
+/// Distinct from a remembered meal, which the app infers from repeated entries.
+/// The difference is intent: a recipe is something she declared and named, so it
+/// can be edited, portioned, and trusted to stay put. Inferred meals come and go
+/// as her history changes.
+///
+/// Nutrition lives on RecipeItem rather than being recomputed, so a saved recipe
+/// keeps the numbers it was created with — including any corrections made at the
+/// time.
+model Recipe {
+  id      String  @id @default(cuid())
+  userId  String
+  profile Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  name String
+
+  /// What she typed to create it, kept so it can be re-parsed or edited later.
+  sourceText String?
+
+  /// How many servings the whole recipe makes. Item nutrition is the TOTAL for
+  /// the batch; logging one serving divides by this.
+  servings Float @default(1)
+
+  notes String?
+
+  items RecipeItem[]
+
+  timesLogged  Int       @default(0)
+  lastLoggedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId, timesLogged(sort: Desc)])
+}
+
+/// One ingredient of a saved recipe, with nutrition for the WHOLE batch.
+model RecipeItem {
+  id       String @id @default(cuid())
+  recipeId String
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  name  String
+  brand String?
+
+  quantity Float  @default(1)
+  unit     String @default("serving")
+  grams    Float
+
+  kcal    Float
+  protein Float
+  carbs   Float
+  fat     Float
+  fiber   Float?
+  sugar   Float?
+  sodium  Float?
+
+  foodGroup       FoodGroup
+  processedLevel  Int
+  nutritionSource NutritionSource
+  confidence      Float   @default(0.5)
+  usdaFdcId       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([recipeId])
 }

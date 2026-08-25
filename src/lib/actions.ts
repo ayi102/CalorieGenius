@@ -1476,3 +1476,185 @@ export async function unhideAllFoods(): Promise<ActionResult> {
   revalidatePath("/");
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Recipes
+// ---------------------------------------------------------------------------
+
+/**
+ * Save a parsed meal as a named recipe.
+ *
+ * The distinction from a remembered meal is intent: this is something she
+ * declared, so it stays put and can be portioned. Item nutrition is stored as
+ * the WHOLE batch; `servings` divides it at read time.
+ */
+export async function saveRecipe(input: {
+  name: string;
+  servings: number;
+  sourceText: string;
+  notes?: string;
+  items: PreviewItem[];
+}): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const name = input.name.trim();
+  if (name.length < 2) return { ok: false, error: "Give the recipe a name." };
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: "A recipe needs at least one ingredient." };
+  }
+  const servings =
+    Number.isFinite(input.servings) && input.servings > 0 ? input.servings : 1;
+  if (servings > 100) return { ok: false, error: "That's a lot of servings." };
+
+  try {
+    // Upsert on name so saving twice edits rather than creating a duplicate the
+    // user then has to clean up.
+    const existing = await prisma.recipe.findFirst({
+      where: { userId: user.userId, name },
+      select: { id: true },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      const itemData = input.items.map((i) => ({
+        name: i.name,
+        brand: i.brand,
+        quantity: i.quantity,
+        unit: i.unit,
+        grams: i.grams,
+        kcal: i.kcal,
+        protein: i.protein,
+        carbs: i.carbs,
+        fat: i.fat,
+        fiber: i.fiber,
+        sugar: i.sugar,
+        sodium: i.sodium,
+        foodGroup: i.foodGroup as never,
+        processedLevel: i.processedLevel,
+        nutritionSource: i.nutritionSource as never,
+        confidence: i.confidence,
+        usdaFdcId: i.usdaFdcId,
+      }));
+
+      if (existing) {
+        // Replace the ingredient set wholesale — a partial merge would leave
+        // ingredients she removed still attached.
+        await tx.recipeItem.deleteMany({ where: { recipeId: existing.id } });
+        await tx.recipe.update({
+          where: { id: existing.id },
+          data: {
+            servings,
+            sourceText: input.sourceText,
+            notes: input.notes?.trim() || null,
+            items: { create: itemData },
+          },
+        });
+      } else {
+        await tx.recipe.create({
+          data: {
+            userId: user.userId,
+            name,
+            servings,
+            sourceText: input.sourceText,
+            notes: input.notes?.trim() || null,
+            items: { create: itemData },
+          },
+        });
+      }
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not save the recipe.",
+    };
+  }
+
+  revalidatePath("/");
+  return { ok: true };
+}
+
+/**
+ * Log servings of a saved recipe. Costs nothing — it copies stored nutrition.
+ */
+export async function logRecipe(
+  recipeId: string,
+  servings = 1,
+  eatenAtIso?: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Number.isFinite(servings) || servings <= 0 || servings > 20) {
+    return { ok: false, error: "Enter between 0.25 and 20 servings." };
+  }
+
+  const recipe = await prisma.recipe.findFirst({
+    where: { id: recipeId, userId: user.userId },
+    include: { items: true },
+  });
+  if (!recipe) return { ok: false, error: "Recipe not found." };
+  if (recipe.items.length === 0) {
+    return { ok: false, error: "That recipe has no ingredients." };
+  }
+
+  const eatenAt = eatenAtIso ? new Date(eatenAtIso) : new Date();
+  if (Number.isNaN(eatenAt.getTime())) {
+    return { ok: false, error: "That time isn't valid." };
+  }
+
+  // Item nutrition is the whole batch, so scale to the servings eaten.
+  const f = servings / (recipe.servings > 0 ? recipe.servings : 1);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.entry.create({
+      data: {
+        userId: user.userId,
+        eatenAt,
+        localDate: toLocalDate(eatenAt, user.timezone),
+        mealType: guessMealType(eatenAt, user.timezone),
+        source: "quickadd",
+        rawText: recipe.name,
+        items: {
+          create: recipe.items.map((i) => ({
+            name: i.name,
+            brand: i.brand,
+            quantity: i.quantity * f,
+            unit: i.unit,
+            grams: i.grams * f,
+            kcal: i.kcal * f,
+            protein: i.protein * f,
+            carbs: i.carbs * f,
+            fat: i.fat * f,
+            fiber: i.fiber === null ? null : i.fiber * f,
+            sugar: i.sugar === null ? null : i.sugar * f,
+            sodium: i.sodium === null ? null : i.sodium * f,
+            foodGroup: i.foodGroup,
+            processedLevel: i.processedLevel,
+            nutritionSource: i.nutritionSource,
+            confidence: i.confidence,
+            usdaFdcId: i.usdaFdcId,
+          })),
+        },
+      },
+    });
+
+    await tx.recipe.update({
+      where: { id: recipe.id },
+      data: { timesLogged: { increment: 1 }, lastLoggedAt: new Date() },
+    });
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/** Delete a saved recipe. Past entries made from it are unaffected. */
+export async function deleteRecipe(recipeId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const result = await prisma.recipe.deleteMany({
+    where: { id: recipeId, userId: user.userId },
+  });
+  if (result.count === 0) return { ok: false, error: "Recipe not found." };
+  revalidatePath("/");
+  return { ok: true };
+}

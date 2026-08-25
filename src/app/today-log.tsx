@@ -4,7 +4,12 @@ import { useState } from "react";
 import { EntryBox } from "./entry-box";
 import { EntryCard } from "./entry-card";
 import { RecipePicker } from "./recipe-picker";
-import type { DayEntryView, RememberedFood, RememberedMeal } from "@/lib/queries";
+import type {
+  DayEntryView,
+  RecipeView,
+  RememberedFood,
+  RememberedMeal,
+} from "@/lib/queries";
 
 /**
  * The main screen: prompt, saved-meal shortcut, and today's meals together.
@@ -16,22 +21,25 @@ import type { DayEntryView, RememberedFood, RememberedMeal } from "@/lib/queries
  */
 export function TodayLog({
   entries,
+  recipes,
   meals,
   foods,
   parsesRemaining,
 }: {
   entries: DayEntryView[];
+  recipes: RecipeView[];
   meals: RememberedMeal[];
   foods: RememberedFood[];
   parsesRemaining: number;
 }) {
   const [picking, setPicking] = useState(false);
-  const hasSaved = meals.length > 0 || foods.length > 0;
+  const hasSaved = recipes.length > 0 || meals.length > 0 || foods.length > 0;
 
   return (
     <div className="flex flex-col gap-4">
       {picking && (
         <RecipePicker
+          recipes={recipes}
           meals={meals}
           foods={foods}
           onClose={() => setPicking(false)}

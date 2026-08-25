@@ -4,6 +4,7 @@ import {
   getParseUsage,
   getProfile,
   getRememberedFoods,
+  getRecipes,
   getRememberedMeals,
   getWaterForDay,
   getWeightHistory,
@@ -29,7 +30,7 @@ export default async function TodayPage() {
   const targets = targetsForProfile(profile);
   const today = todayIso(profile.timezone);
 
-  const [day, usage, rememberedMeals, rememberedFoods, water, weight] =
+  const [day, usage, recipes, rememberedMeals, rememberedFoods, water, weight] =
     await Promise.all([
     getDay(
       user.userId,
@@ -43,6 +44,7 @@ export default async function TodayPage() {
         : null,
     ),
     getParseUsage(user.userId, today),
+    getRecipes(user.userId, targets.kcal),
     getRememberedMeals(user.userId, targets.kcal),
     getRememberedFoods(user.userId),
     getWaterForDay(
@@ -94,6 +96,7 @@ export default async function TodayPage() {
             content: (
               <TodayLog
                 entries={day.entries}
+                recipes={recipes}
                 meals={rememberedMeals}
                 foods={rememberedFoods}
                 parsesRemaining={remaining}

@@ -2,8 +2,15 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { combineFoods, hideFood, quickAddFood, relogEntry } from "@/lib/actions";
-import type { RememberedFood, RememberedMeal } from "@/lib/queries";
+import {
+  combineFoods,
+  deleteRecipe,
+  hideFood,
+  logRecipe,
+  quickAddFood,
+  relogEntry,
+} from "@/lib/actions";
+import type { RecipeView, RememberedFood, RememberedMeal } from "@/lib/queries";
 import { scoreBand } from "@/lib/scoring";
 
 const BAND: Record<string, string> = {
@@ -27,10 +34,12 @@ const BAND: Record<string, string> = {
  * information is useful.
  */
 export function RecipePicker({
+  recipes,
   meals,
   foods,
   onClose,
 }: {
+  recipes: RecipeView[];
   meals: RememberedMeal[];
   foods: RememberedFood[];
   onClose: () => void;
@@ -41,7 +50,18 @@ export function RecipePicker({
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"meals" | "foods">("meals");
+  /**
+   * Three tabs, because they are three different kinds of thing:
+   *   mine     — recipes she declared and named. Intent, not inference.
+   *   detected — repeated multi-item meals the app noticed in her log.
+   *   prompts  — single foods and one-offs; not really recipes at all.
+   *
+   * Opens on whichever has content, preferring her own.
+   */
+  const [tab, setTab] = useState<"mine" | "detected" | "prompts">(
+    recipes.length > 0 ? "mine" : meals.length > 0 ? "detected" : "prompts",
+  );
+  const [servingsFor, setServingsFor] = useState<Record<string, string>>({});
 
   /**
    * Combine mode.
@@ -93,6 +113,9 @@ export function RecipePicker({
   }
 
   const needle = query.trim().toLowerCase();
+  const shownRecipes = needle
+    ? recipes.filter((r) => r.name.toLowerCase().includes(needle))
+    : recipes;
   const shownMeals = needle
     ? meals.filter((m) => m.rawText.toLowerCase().includes(needle))
     : meals;
@@ -152,28 +175,168 @@ export function RecipePicker({
             aria-label="Search your meals"
             className="min-h-11 w-full rounded-md border border-border bg-background px-3 text-sm"
           />
-          {meals.length > 0 && foods.length > 0 && (
-            <div className="flex gap-1 text-xs">
-              {(["meals", "foods"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTab(t)}
-                  className={`min-h-9 rounded-full px-3 ${
-                    tab === t
-                      ? "bg-accent font-medium text-accent-fg"
-                      : "border border-border text-muted"
-                  }`}
-                >
-                  {t === "meals" ? "Meals" : "Single foods"}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5 text-xs">
+            {(
+              [
+                ["mine", "My Recipes", recipes.length],
+                ["detected", "Detected Recipes", meals.length],
+                ["prompts", "Prompts", foods.length],
+              ] as const
+            ).map(([id, label, count]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={`min-h-9 shrink-0 rounded-full px-3 ${
+                  tab === id
+                    ? "bg-accent font-medium text-accent-fg"
+                    : "border border-border text-muted"
+                }`}
+              >
+                {label}
+                {count > 0 && (
+                  <span className="tnum ml-1 opacity-70">{count}</span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          {tab === "meals" ? (
+          {tab === "mine" ? (
+            shownRecipes.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-sm text-muted">
+                  {recipes.length === 0
+                    ? "No saved recipes yet."
+                    : "No match."}
+                </p>
+                {recipes.length === 0 && (
+                  <p className="mx-auto mt-1 max-w-xs text-xs text-muted">
+                    Type the ingredients on the main screen, press{" "}
+                    <span className="text-foreground">Recipe</span>, then name it
+                    and say how many servings it makes.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <ul className="flex flex-col divide-y divide-border">
+                {shownRecipes.map((r) => {
+                  const expanded = open === r.id;
+                  const n = servingsFor[r.id] ?? "1";
+                  return (
+                    <li key={r.id} className="py-2.5">
+                      <div className="flex items-start gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setOpen(expanded ? null : r.id)}
+                          aria-expanded={expanded}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <p className="text-sm font-medium [overflow-wrap:anywhere]">
+                            {r.name}
+                          </p>
+                          <p className="tnum mt-0.5 text-xs text-muted">
+                            {r.perServing.kcal} cal · {r.perServing.protein} g
+                            protein · per serving
+                            {r.servings > 1 && ` · makes ${r.servings}`}
+                            {r.timesLogged > 0 && ` · ${r.timesLogged}×`}
+                          </p>
+                        </button>
+
+                        {r.score && (
+                          <span
+                            className={`grid h-8 w-8 shrink-0 place-items-center rounded text-xs font-semibold tnum ${BAND[scoreBand(r.score.total)]}`}
+                            title={r.score.headline}
+                          >
+                            {r.score.total}
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() =>
+                            run(r.id, () => logRecipe(r.id, Number(n) || 1))
+                          }
+                          className="min-h-9 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+                        >
+                          {busy === r.id ? "…" : "Add"}
+                        </button>
+                      </div>
+
+                      {expanded && (
+                        <div className="mt-2 rounded-lg bg-surface-raised p-3">
+                          {r.score && (
+                            <p className="text-xs text-muted">{r.score.headline}</p>
+                          )}
+                          <dl className="mt-2 grid grid-cols-4 gap-2 text-center">
+                            {[
+                              { l: "cal", v: r.perServing.kcal },
+                              { l: "protein", v: `${r.perServing.protein} g` },
+                              { l: "carbs", v: `${r.perServing.carbs} g` },
+                              { l: "fiber", v: `${r.perServing.fiber} g` },
+                            ].map((x) => (
+                              <div key={x.l}>
+                                <dd className="tnum text-sm font-medium">{x.v}</dd>
+                                <dt className="text-[10px] text-muted">{x.l}</dt>
+                              </div>
+                            ))}
+                          </dl>
+                          <ul className="mt-2 flex flex-col gap-0.5 border-t border-border pt-2">
+                            {r.items.map((it, i) => (
+                              <li
+                                key={i}
+                                className="flex items-baseline gap-2 text-xs text-muted"
+                              >
+                                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                                  {it.name}
+                                </span>
+                                <span className="tnum">{it.grams} g</span>
+                                <span className="tnum w-10 text-right">
+                                  {it.kcal}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="mt-2 flex items-center gap-2 border-t border-border pt-2">
+                            <label className="flex items-center gap-1.5 text-[11px] text-muted">
+                              Log
+                              <input
+                                type="number"
+                                min={0.25}
+                                max={20}
+                                step={0.25}
+                                inputMode="decimal"
+                                value={n}
+                                onChange={(e) =>
+                                  setServingsFor((p) => ({
+                                    ...p,
+                                    [r.id]: e.target.value,
+                                  }))
+                                }
+                                className="tnum min-h-9 w-16 rounded border border-border bg-background px-1.5 text-right"
+                                aria-label={`Servings of ${r.name}`}
+                              />
+                              servings
+                            </label>
+                            <button
+                              type="button"
+                              disabled={pending}
+                              onClick={() => run(r.id, () => deleteRecipe(r.id))}
+                              className="ml-auto min-h-9 px-2 text-[11px] text-muted hover:text-negative"
+                            >
+                              Delete recipe
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )
+          ) : tab === "detected" ? (
             shownMeals.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted">
                 {meals.length === 0

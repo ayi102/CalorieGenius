@@ -6,6 +6,7 @@ import {
   analyzeEntry,
   relogEntry,
   saveEntry,
+  saveRecipe,
   scanBarcode,
   type AnalyzeResult,
   type PreviewItem,
@@ -86,6 +87,17 @@ export function EntryBox({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const scanBtnRef = useRef<HTMLButtonElement>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  /**
+   * Recipe mode.
+   *
+   * An explicit declaration rather than something inferred: the app can guess
+   * that a repeated meal is a pattern, but only she knows that "Sunday chilli"
+   * is a recipe she wants kept, named, and portioned. Intent is not derivable.
+   */
+  const [asRecipe, setAsRecipe] = useState(false);
+  const [recipeName, setRecipeName] = useState("");
+  const [servings, setServings] = useState("1");
   const [preview, setPreview] = useState<AnalyzeResult | null>(null);
   const [items, setItems] = useState<PreviewItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -190,6 +202,30 @@ export function EntryBox({
       setEatenAt(nowLocalInput());
       setRestaurant("");
       setShowRestaurant(false);
+      router.refresh();
+    });
+  }
+
+  function onSaveRecipe() {
+    if (!preview?.rawText) return;
+    setError(null);
+    startSave(async () => {
+      const result = await saveRecipe({
+        name: recipeName,
+        servings: Number(servings) || 1,
+        sourceText: preview.rawText!,
+        items,
+      });
+      if (!result.ok) {
+        setError(result.error ?? "Could not save the recipe.");
+        return;
+      }
+      setText("");
+      setPreview(null);
+      setItems([]);
+      setRecipeName("");
+      setServings("1");
+      setAsRecipe(false);
       router.refresh();
     });
   }
@@ -342,6 +378,20 @@ export function EntryBox({
 
             <div className="flex gap-2 sm:ml-auto sm:contents">
               <button
+                type="button"
+                onClick={() => setAsRecipe((v) => !v)}
+                aria-pressed={asRecipe}
+                className={`min-h-11 rounded-md border px-3 text-sm ${
+                  asRecipe
+                    ? "border-accent bg-accent text-accent-fg"
+                    : "border-border text-muted hover:text-foreground"
+                }`}
+                title="Save this as a named recipe you can log again in one tap"
+              >
+                Recipe
+              </button>
+
+              <button
                 ref={scanBtnRef}
                 type="button"
                 onClick={() => {
@@ -365,6 +415,14 @@ export function EntryBox({
               </button>
             </div>
           </div>
+
+          {asRecipe && (
+            <p className="text-xs text-muted">
+              Recipe mode: list the ingredients and you&apos;ll name it and set how
+              many servings it makes before saving. It won&apos;t be logged as a
+              meal.
+            </p>
+          )}
 
           <p className="text-xs text-muted">
             {parsesRemaining} parses left today. Repeats are free.
@@ -497,14 +555,60 @@ export function EntryBox({
             </p>
           )}
 
+          {asRecipe && (
+            <div className="flex flex-col gap-2 rounded-lg bg-surface-raised p-3 sm:flex-row sm:items-end">
+              <label className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="text-xs text-muted">Recipe name</span>
+                <input
+                  value={recipeName}
+                  onChange={(e) => setRecipeName(e.target.value)}
+                  placeholder="Sunday chilli"
+                  className="min-h-11 w-full rounded-md border border-border bg-background px-2.5 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-muted">Makes</span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    step="any"
+                    inputMode="decimal"
+                    value={servings}
+                    onChange={(e) => setServings(e.target.value)}
+                    className="tnum min-h-11 w-20 rounded-md border border-border bg-background px-2 text-right"
+                    aria-label="Servings the recipe makes"
+                  />
+                  <span className="text-xs text-muted">servings</span>
+                </div>
+              </label>
+            </div>
+          )}
+
+          {asRecipe && Number(servings) > 1 && (
+            <p className="text-xs text-muted tnum">
+              Per serving: {Math.round(totals.kcal / Number(servings))} cal ·{" "}
+              {Math.round(totals.protein / Number(servings))} g protein
+            </p>
+          )}
+
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
             <button
               type="button"
-              onClick={onSave}
-              disabled={saving || items.length === 0}
+              onClick={asRecipe ? onSaveRecipe : onSave}
+              disabled={
+                saving ||
+                items.length === 0 ||
+                (asRecipe && recipeName.trim().length < 2)
+              }
               className="min-h-12 rounded-md bg-accent px-4 text-sm font-medium text-accent-fg disabled:opacity-50 sm:min-h-11"
             >
-              {saving ? "Saving…" : `Save ${items.length} item${items.length === 1 ? "" : "s"}`}
+              {saving
+                ? "Saving…"
+                : asRecipe
+                  ? "Save recipe"
+                  : `Save ${items.length} item${items.length === 1 ? "" : "s"}`}
             </button>
             <div className="flex gap-2">
               <button

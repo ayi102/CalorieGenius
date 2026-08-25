@@ -883,3 +883,89 @@ export async function getUsageSummary(
     firstUsedAt: first?.localDate ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Recipes
+// ---------------------------------------------------------------------------
+
+export interface RecipeView {
+  id: string;
+  name: string;
+  servings: number;
+  notes: string | null;
+  itemCount: number;
+  items: { name: string; grams: number; kcal: number }[];
+  /** Nutrition for ONE serving — what logging it actually adds. */
+  perServing: {
+    kcal: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+    fiber: number;
+  };
+  score: MealScore | null;
+  timesLogged: number;
+  lastLoggedAt: Date | null;
+}
+
+/**
+ * The user's saved recipes, most-used first.
+ *
+ * Nutrition is divided by `servings` because that is what logging one adds —
+ * showing batch totals would mean a lasagne reads as 3,000 calories and nobody
+ * would trust it.
+ */
+export async function getRecipes(
+  userId: string,
+  targetKcal: number,
+): Promise<RecipeView[]> {
+  const rows = await prisma.recipe.findMany({
+    where: { userId },
+    include: { items: true },
+    orderBy: [{ timesLogged: "desc" }, { updatedAt: "desc" }],
+  });
+
+  return rows.map((r) => {
+    const servings = r.servings > 0 ? r.servings : 1;
+    const sum = (pick: (i: (typeof r.items)[number]) => number) =>
+      r.items.reduce((s, i) => s + pick(i), 0);
+
+    const perServing = {
+      kcal: Math.round(sum((i) => i.kcal) / servings),
+      protein: Math.round(sum((i) => i.protein) / servings),
+      carbs: Math.round(sum((i) => i.carbs) / servings),
+      fat: Math.round(sum((i) => i.fat) / servings),
+      fiber: Math.round(sum((i) => i.fiber ?? 0) / servings),
+    };
+
+    return {
+      id: r.id,
+      name: r.name,
+      servings,
+      notes: r.notes,
+      itemCount: r.items.length,
+      items: r.items.map((i) => ({
+        name: i.name,
+        grams: Math.round(i.grams / servings),
+        kcal: Math.round(i.kcal / servings),
+      })),
+      perServing,
+      // Scored per serving, as lunch — the neutral slot, since a saved recipe
+      // has no time of day attached.
+      score: computeMealScore(
+        r.items.map((i) => ({
+          kcal: i.kcal / servings,
+          protein: i.protein / servings,
+          carbs: i.carbs / servings,
+          fat: i.fat / servings,
+          fiber: (i.fiber ?? 0) / servings,
+          processedLevel: i.processedLevel,
+        })),
+        "lunch",
+        targetKcal,
+      ),
+      timesLogged: r.timesLogged,
+      lastLoggedAt: r.lastLoggedAt,
+    };
+  });
+}
