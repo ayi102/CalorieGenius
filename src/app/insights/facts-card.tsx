@@ -20,12 +20,6 @@ export function FactsCard({
   const w = facts.weight;
   const rate = w.ratePerWeekKg;
   const showRate = rate !== null;
-  const rateDisplay =
-    rate === null
-      ? null
-      : units === "imperial"
-        ? `${kgToLb(rate) > 0 ? "+" : ""}${kgToLb(rate).toFixed(1)} lb/wk`
-        : `${rate > 0 ? "+" : ""}${rate.toFixed(2)} kg/wk`;
   const rateGood =
     rate === null
       ? null
@@ -38,11 +32,25 @@ export function FactsCard({
   const up = facts.ultraProcessedPct;
 
   /**
-   * Nine tiles in a 3x3 grid, grouped: intake and outcome, then habits, then
-   * nutrients. Ultra-processed share earns a tile rather than a footnote — for a
-   * weight-loss goal it is one of the more actionable figures on the page, and
-   * burying it under the grid said the opposite.
+   * Nine tiles, three across at every width.
+   *
+   * Labels and sub-lines are kept SHORT on purpose: three columns on a 375px
+   * phone leaves about 90px of content per tile, and the earlier wording
+   * ("Ultra-processed", "from 7 weigh-ins") ran to the edge or past it. Each
+   * label is one word where possible, with the unit demoted to the line beneath.
    */
+  const weightValue = showRate
+    ? units === "imperial"
+      ? `${kgToLb(rate!) > 0 ? "+" : "−"}${Math.abs(kgToLb(rate!)).toFixed(1)}`
+      : `${rate! > 0 ? "+" : "−"}${Math.abs(rate!).toFixed(2)}`
+    : w.latestKg === null
+      ? "—"
+      : units === "imperial"
+        ? String(Math.round(kgToLb(w.latestKg)))
+        : w.latestKg.toFixed(1);
+
+  const weightUnit = units === "imperial" ? "lb" : "kg";
+
   const tiles: {
     label: string;
     value: string;
@@ -50,60 +58,49 @@ export function FactsCard({
     tone?: "good" | "watch" | null;
   }[] = [
     {
-      label: "Calories a day",
+      label: "Calories",
       value: facts.avgKcal === null ? "—" : facts.avgKcal.toLocaleString(),
-      sub: `target ${facts.targetKcal.toLocaleString()}`,
+      sub: `of ${facts.targetKcal.toLocaleString()}`,
     },
     {
-      label: showRate ? "Weight trend" : "Weight",
-      value: showRate
-        ? rateDisplay!
-        : w.latestKg === null
-          ? "—"
-          : units === "imperial"
-            ? `${Math.round(kgToLb(w.latestKg))} lb`
-            : `${w.latestKg.toFixed(1)} kg`,
-      sub: showRate
-        ? `from ${w.weighIns} weigh-ins`
-        : w.weighIns < 3
-          ? "needs 3+ weigh-ins"
-          : undefined,
+      label: "Weight",
+      value: weightValue,
+      sub: showRate ? `${weightUnit} / week` : w.weighIns < 3 ? "3+ weigh-ins" : weightUnit,
       tone: rateGood === null ? null : rateGood ? "good" : null,
     },
     {
-      label: "Days on target",
+      label: "On target",
       value: `${facts.daysOnTarget}`,
-      sub: `of ${facts.daysTracked} tracked`,
+      sub: `of ${facts.daysTracked} days`,
     },
     {
       label: "Eating out",
       value: facts.eatingOutPct === null ? "—" : `${facts.eatingOutPct}%`,
-      sub:
-        facts.totalMeals > 0
-          ? `${facts.mealsOut} of ${facts.totalMeals} meals`
-          : undefined,
+      sub: facts.totalMeals > 0 ? `${facts.mealsOut} of ${facts.totalMeals}` : undefined,
     },
     {
-      label: "Ultra-processed",
+      label: "Processed",
       value: up === null ? "—" : `${up}%`,
-      sub: "of your calories",
-      // Above a third of intake is the point worth noticing; below a fifth is
-      // genuinely good. In between says nothing, so it stays neutral.
+      sub: "of calories",
+      // Above a third of intake is worth noticing; below a fifth is genuinely
+      // good. In between says nothing, so it stays neutral.
       tone: up === null ? null : up >= 35 ? "watch" : up <= 20 ? "good" : null,
     },
     {
-      label: "Meals a day",
+      label: "Meals",
       value: facts.avgMealsPerDay === null ? "—" : String(facts.avgMealsPerDay),
+      sub: "per day",
     },
     {
-      label: "Protein a day",
-      value: facts.avgProtein === null ? "—" : `${facts.avgProtein} g`,
+      label: "Protein",
+      value: facts.avgProtein === null ? "—" : String(facts.avgProtein),
+      sub: "g per day",
     },
     {
-      label: "Fiber a day",
-      value: facts.avgFiber === null ? "—" : `${facts.avgFiber} g`,
-      // 25 g is the common daily reference for women; under 15 is low enough to
-      // be worth flagging.
+      label: "Fiber",
+      value: facts.avgFiber === null ? "—" : String(facts.avgFiber),
+      sub: "g per day",
+      // 25 g is the common daily reference; under 15 is low enough to flag.
       tone:
         facts.avgFiber === null
           ? null
@@ -114,9 +111,15 @@ export function FactsCard({
               : null,
     },
     {
-      label: "Water a day",
+      label: "Water",
       value:
-        facts.avgWaterMl === null ? "—" : formatVolume(facts.avgWaterMl, units),
+        facts.avgWaterMl === null
+          ? "—"
+          : formatVolume(facts.avgWaterMl, units).replace(/ (oz|L|ml)$/, ""),
+      sub:
+        facts.avgWaterMl === null
+          ? "per day"
+          : `${units === "imperial" ? "oz" : facts.avgWaterMl >= 1000 ? "L" : "ml"} per day`,
     },
   ];
 
