@@ -667,30 +667,30 @@ function mealHeadline(components: ScoreComponent[], total: number): string {
 
 
 /**
- * Did this day land on target?
+ * Did this day meet the goal?
  *
- * Deliberately ASYMMETRIC and goal-aware. A symmetric "within 10%" band counts a
- * day 12% under as a miss, which is backwards when the goal is to lose weight —
- * eating under budget is the point. The band opens in whichever direction the
- * goal points and stays tight in the other.
+ * On a LOSS goal the rule is simply at-or-under target — no lower bound, by
+ * explicit product decision. The budget is a ceiling, so any day spent at or
+ * beneath it met the goal, however far beneath.
  *
- * There is still a floor on a loss goal: a 400-calorie day is technically under
- * budget but calling it "on target" would reward starving, and the day score and
- * the insight prompt both treat chronic undereating as a problem rather than a
- * win.
+ * This is deliberately not the same question as "was this a good day". Chronic
+ * undereating is still surfaced: the day score's calorie component tapers away
+ * from target in both directions, and the weekly review calls out a run of very
+ * low days as a rebound risk rather than praising it. Those stay as the place
+ * that nuance lives, so this metric can answer the plain question it is asked.
  */
 export function isDayOnTarget(kcal: number, targetKcal: number, goal: Goal): boolean {
   if (targetKcal <= 0) return false;
-  const ratio = kcal / targetKcal;
 
   switch (goal) {
     case "lose":
-      // Up to 2% over is rounding, not a miss. Below 60% is undereating.
-      return ratio >= 0.6 && ratio <= 1.02;
+      // At or under the ceiling. Zero counts.
+      return kcal <= targetKcal;
     case "gain":
-      // Mirror image: hitting or exceeding the target is the goal.
-      return ratio >= 0.98 && ratio <= 1.4;
+      // Mirror image: the target is a floor, and anything above it meets it.
+      return kcal >= targetKcal;
     case "maintain":
-      return Math.abs(ratio - 1) <= 0.1;
+      // Neither direction is the goal, so the band stays symmetric.
+      return Math.abs(kcal / targetKcal - 1) <= 0.1;
   }
 }
