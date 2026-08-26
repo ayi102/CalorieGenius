@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  addItemToEntry,
   correctItem,
   deleteEntry,
   deleteItem,
   updateEntryTime,
-  updateItemGrams,
-  updateItemServings,
+  updateItemAmount,
 } from "@/lib/actions";
+import { fromGrams, unitChoices } from "@/lib/nutrition/units";
 import type { DayEntryView, DayItemView } from "@/lib/queries";
 import { formatLocalMinutes } from "@/lib/time";
 import { MealScoreChip } from "./score-chip";
@@ -49,16 +50,30 @@ function ItemRow({ item }: { item: DayItemView }) {
     fat: Math.round(item.fat),
   };
 
-  // An item logged in servings (a barcode scan) is edited in servings; anything
-  // else in grams. Asking for the grams in a cereal box is not a real question.
-  const perServing =
-    item.unit === "serving" && item.quantity > 0 ? item.grams / item.quantity : null;
+  /**
+   * How this food can be measured.
+   *
+   * Food-specific, because a cup of rice is 160 g and a cup of spinach is 30 g.
+   * The options come from the parser and are stored on the row, with weight
+   * units always available and the unit actually logged recovered from the row
+   * itself for older entries that predate this.
+   */
+  const choices = unitChoices(
+    item.unitOptions,
+    item.unit,
+    item.grams,
+    item.quantity,
+  );
+  const currentUnit =
+    choices.find((c) => c.unit === item.unit.trim().toLowerCase()) ?? choices[0];
 
-  const [grams, setGrams] = useState(Math.round(item.grams));
-  const [servings, setServings] = useState(
-    Number((item.quantity || 1).toFixed(2)),
+  const [unit, setUnit] = useState(currentUnit?.unit ?? "g");
+  const [amount, setAmount] = useState(
+    currentUnit ? fromGrams(item.grams, currentUnit) : Math.round(item.grams),
   );
   const [form, setForm] = useState(pristine);
+
+  const selected = choices.find((c) => c.unit === unit) ?? currentUnit;
 
   /**
    * Close without saving, throwing away any half-typed edits.
@@ -70,8 +85,8 @@ function ItemRow({ item }: { item: DayItemView }) {
   function dismiss() {
     setExpanded(false);
     setError(null);
-    setGrams(Math.round(item.grams));
-    setServings(Number((item.quantity || 1).toFixed(2)));
+    setUnit(currentUnit?.unit ?? "g");
+    setAmount(currentUnit ? fromGrams(item.grams, currentUnit) : Math.round(item.grams));
     setForm(pristine);
   }
 
@@ -175,9 +190,8 @@ function ItemRow({ item }: { item: DayItemView }) {
           </span>
           <span className="text-muted/70">
             {" · "}
-            {perServing
-              ? `${Number(item.quantity.toFixed(2))} ${item.quantity === 1 ? "serving" : "servings"}`
-              : `${Math.round(item.grams)} g`}
+            {Number(item.quantity.toFixed(2))} {item.unit}
+            {item.unit !== "g" && ` (${Math.round(item.grams)} g)`}
           </span>
           {isEstimate && (
             <span className="ml-1 text-warning" title="Estimated — no database match">
@@ -231,64 +245,54 @@ function ItemRow({ item }: { item: DayItemView }) {
           </p>
           {/* Fast path: just fix the portion. Nutrition rescales with it. */}
           <div className="flex flex-wrap items-end gap-2">
-            {perServing ? (
-              <>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] text-muted">Servings</span>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min={0.25}
-                      max={50}
-                      step={0.25}
-                      inputMode="decimal"
-                      value={servings}
-                      onChange={(e) => setServings(Number(e.target.value))}
-                      className="tnum min-h-10 w-20 rounded border border-border bg-background px-2 text-right"
-                      aria-label="Servings"
-                    />
-                    <span className="text-[11px] text-muted">
-                      × {Math.round(perServing)} g
-                    </span>
-                  </div>
-                </label>
-                <button
-                  type="button"
-                  disabled={pending || servings === Number(item.quantity.toFixed(2))}
-                  onClick={() => run(() => updateItemServings(item.id, servings))}
-                  className="min-h-10 rounded bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+            <label className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted">Amount</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(Number(e.target.value))}
+                  className="tnum min-h-10 w-20 rounded border border-border bg-background px-2 text-right"
+                  aria-label="Amount"
+                />
+                <select
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  aria-label="Unit"
+                  className="min-h-10 rounded border border-border bg-background px-1.5 text-xs"
                 >
-                  Rescale
-                </button>
-              </>
-            ) : (
-              <>
-                <label className="flex flex-col gap-1">
-                  <span className="text-[11px] text-muted">Portion</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={1}
-                      max={5000}
-                      inputMode="numeric"
-                      value={grams}
-                      onChange={(e) => setGrams(Number(e.target.value))}
-                      className="tnum min-h-10 w-20 rounded border border-border bg-background px-2 text-right"
-                      aria-label="Grams"
-                    />
-                    <span className="text-[11px] text-muted">g</span>
-                  </div>
-                </label>
-                <button
-                  type="button"
-                  disabled={pending || grams === Math.round(item.grams)}
-                  onClick={() => run(() => updateItemGrams(item.id, grams))}
-                  className="min-h-10 rounded bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
-                >
-                  Rescale
-                </button>
-              </>
+                  {choices.map((c) => (
+                    <option key={c.unit} value={c.unit}>
+                      {c.unit}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </label>
+
+            {selected && unit !== "g" && (
+              <span className="pb-2.5 text-[11px] text-muted tnum">
+                = {Math.round(amount * selected.gramsPerUnit)} g
+              </span>
             )}
+
+            <button
+              type="button"
+              disabled={pending || !selected || amount <= 0}
+              onClick={() =>
+                selected &&
+                run(() =>
+                  updateItemAmount(item.id, amount, selected.unit, selected.gramsPerUnit),
+                )
+              }
+              className="min-h-10 rounded bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+            >
+              Update
+            </button>
+
             <button
               type="button"
               onClick={dismiss}
@@ -345,7 +349,8 @@ function ItemRow({ item }: { item: DayItemView }) {
                     correctItem({
                       itemId: item.id,
                       name: form.name,
-                      grams,
+                      // The override applies to the amount currently selected.
+                      grams: selected ? amount * selected.gramsPerUnit : item.grams,
                       kcal: form.kcal,
                       protein: form.protein,
                       carbs: form.carbs,
@@ -376,6 +381,9 @@ export function EntryCard({ entry }: { entry: DayEntryView }) {
   const [pending, start] = useTransition();
   const [editingTime, setEditingTime] = useState(false);
   const [when, setWhen] = useState(() => toLocalInput(new Date(entry.eatenAt)));
+  const [adding, setAdding] = useState(false);
+  const [addText, setAddText] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
 
   const kcal = entry.items.reduce((s, i) => s + i.kcal, 0);
 
@@ -469,7 +477,71 @@ export function EntryCard({ entry }: { entry: DayEntryView }) {
         ))}
       </ul>
 
-      <p className="mt-1.5 text-[11px] text-muted">Tap an item to fix it.</p>
+      {/* Adding runs the same parse-and-ground pipeline as a new meal, so
+          "2 tbsp peanut butter" arrives with real nutrition rather than needing
+          the numbers typed in. */}
+      {adding ? (
+        <form
+          className="mt-2 flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = addText.trim();
+            if (text.length < 2) return;
+            setAddError(null);
+            start(async () => {
+              const r = await addItemToEntry(entry.id, text);
+              if (!r.ok) {
+                setAddError(r.error ?? "Could not add that.");
+                return;
+              }
+              setAddText("");
+              setAdding(false);
+              router.refresh();
+            });
+          }}
+        >
+          <input
+            value={addText}
+            onChange={(e) => setAddText(e.target.value)}
+            autoFocus
+            placeholder="2 tbsp peanut butter"
+            aria-label="Ingredient to add"
+            className="min-h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 text-xs"
+          />
+          <button
+            type="submit"
+            disabled={pending || addText.trim().length < 2}
+            className="min-h-10 shrink-0 rounded-md bg-accent px-3 text-xs font-medium text-accent-fg disabled:opacity-50"
+          >
+            {pending ? "…" : "Add"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAdding(false);
+              setAddText("");
+              setAddError(null);
+            }}
+            className="min-h-10 shrink-0 rounded-md border border-border px-2.5 text-xs text-muted"
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="mt-2 min-h-9 rounded-md border border-dashed border-border-strong px-3 text-xs text-muted hover:border-accent hover:text-foreground"
+        >
+          + Add an ingredient
+        </button>
+      )}
+
+      {addError && <p className="mt-1.5 text-xs text-negative">{addError}</p>}
+
+      <p className="mt-1.5 text-[11px] text-muted">
+        Tap an item to change its amount, units, or numbers.
+      </p>
     </li>
   );
 }

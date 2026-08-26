@@ -32,6 +32,8 @@ export interface GroundedItem {
   usdaFdcId: string | null;
   /** Set when an existing library row supplied the numbers. */
   foodItemId: string | null;
+  /** Ways this food can be measured, food-specific. */
+  unitOptions: { unit: string; gramsPerUnit: number }[];
   /** Human-readable provenance for the UI. */
   provenance: string;
   /**
@@ -98,6 +100,7 @@ export async function groundItem(
     quantity: item.quantity,
     unit: item.unit,
     grams: item.grams,
+    unitOptions: item.unitOptions ?? [],
     foodGroup: item.foodGroup as FoodGroup,
     processedLevel: item.processedLevel,
     confidence: item.confidence,

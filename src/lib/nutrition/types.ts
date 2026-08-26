@@ -54,6 +54,20 @@ export const ParsedItemSchema = z.object({
     .describe(
       "TOTAL weight in grams for the ENTIRE quantity, not per unit. Two 50g eggs => 100. This is what all nutrition below is for.",
     ),
+  unitOptions: z
+    .array(
+      z.object({
+        unit: z
+          .string()
+          .describe('Unit name, singular: "g", "oz", "cup", "tbsp", "slice", "egg", "serving".'),
+        gramsPerUnit: z
+          .number()
+          .describe("Grams in ONE of this unit, for THIS food specifically."),
+      }),
+    )
+    .describe(
+      "Two to four sensible ways to measure THIS food, each with the grams in one unit. Volume and count units are food-specific: a cup of rice is 160 g but a cup of spinach is 30 g, so give the figure for this food rather than a generic one. Always include the unit the user actually used.",
+    ),
   foodGroup: z.enum(FOOD_GROUPS).describe("Best-fit group for this item."),
   processedLevel: z
     .number()

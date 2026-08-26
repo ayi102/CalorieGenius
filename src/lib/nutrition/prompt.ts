@@ -38,6 +38,27 @@ Common reference weights (cooked, edible):
 - cup milk 240 g; can of soda 355 g; pint of beer 470 g
 - restaurant burrito 400 g; wrap or sandwich 250 g; side of fries 115 g
 
+## unitOptions — how this food is naturally measured
+
+Give two to four ways someone would actually measure THIS food, each with the
+grams in one of that unit. Always include the unit they used.
+
+The gram figures are food-specific, and that is the whole point:
+
+- rice: cup 160 g, tbsp 10 g, g 1
+- spinach: cup 30 g, handful 25 g, g 1
+- peanut butter: tbsp 16 g, cup 258 g, g 1
+- chicken breast: oz 28 g, breast 170 g, g 1
+- milk: cup 240 g, fl oz 30 g, g 1
+- bread: slice 28 g, g 1
+
+A cup of rice and a cup of spinach differ five-fold. Never give a generic volume
+conversion; give the one for the food in front of you.
+
+Include "g" as an option for anything weighable, and "oz" where someone might
+reasonably weigh it in ounces. Skip units nobody would use for that food — nobody
+measures spinach in tablespoons.
+
 ## Splitting into items — default to FEWER
 
 This is the judgement that most affects whether the app is pleasant to use. Err

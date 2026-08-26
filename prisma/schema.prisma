@@ -232,6 +232,14 @@ model EntryItem {
 
   nutritionSource NutritionSource
 
+  /// Ways this food can be measured, as [{ unit, gramsPerUnit }].
+  ///
+  /// Stored per item because the conversion is food-specific: a cup of rice is
+  /// 160 g and a cup of spinach is 30 g. Keeping it on the row means a portion
+  /// can still be re-measured in cups months later without asking the model
+  /// again.
+  unitOptions Json?
+
   /// 0..1, the parser's own confidence. Low values get flagged in the UI.
   confidence Float @default(0.5)
 
@@ -502,6 +510,14 @@ model RecipeItem {
   nutritionSource NutritionSource
   confidence      Float   @default(0.5)
   usdaFdcId       String?
+
+  /// Ways this food can be measured, as [{ unit, gramsPerUnit }].
+  ///
+  /// Stored per item because the conversion is food-specific: a cup of rice is
+  /// 160 g and a cup of spinach is 30 g. Keeping it on the row means a portion
+  /// can still be re-measured in cups months later without asking the model
+  /// again.
+  unitOptions Json?
 
   createdAt DateTime @default(now())
 

@@ -278,6 +278,8 @@ export interface PreviewItem {
   foodItemId: string | null;
   provenance: string;
   lookupUnavailable: boolean;
+  /** Food-specific ways to measure this item. */
+  unitOptions: { unit: string; gramsPerUnit: number }[];
 }
 
 export interface AnalyzeResult {
@@ -360,6 +362,7 @@ export async function analyzeEntry(form: FormData): Promise<AnalyzeResult> {
         foodItemId: i.foodItemId,
         provenance: i.provenance,
         lookupUnavailable: i.lookupUnavailable,
+        unitOptions: i.unitOptions ?? [],
       })),
       mealName: outcome.mealName,
       restaurantName: outcome.restaurantName,
@@ -452,6 +455,7 @@ export async function saveEntry(input: SaveEntryInput): Promise<ActionResult> {
             nutritionSource: i.nutritionSource as never,
             confidence: i.confidence,
             usdaFdcId: i.usdaFdcId,
+            unitOptions: i.unitOptions ?? [],
           })),
         },
       },
@@ -826,6 +830,10 @@ export async function scanBarcode(barcode: string): Promise<BarcodeResult> {
             ? "Your correction"
             : "Scanned before (cached)",
         lookupUnavailable: false,
+        unitOptions: [
+          { unit: "serving", gramsPerUnit: cached.defaultGrams },
+          { unit: "g", gramsPerUnit: 1 },
+        ],
       },
     };
   }
@@ -926,6 +934,10 @@ export async function scanBarcode(barcode: string): Promise<BarcodeResult> {
         foodItemId: saved?.id ?? null,
         provenance,
         lookupUnavailable: false,
+        unitOptions: [
+          { unit: "serving", gramsPerUnit: grams },
+          { unit: "g", gramsPerUnit: 1 },
+        ],
       },
     };
   } catch (error) {
@@ -1881,6 +1893,140 @@ export async function generatePatterns(
     };
   }
 
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Editing the ingredients of a saved meal
+// ---------------------------------------------------------------------------
+
+/**
+ * Add an ingredient to a meal already logged.
+ *
+ * Runs the same parse-and-ground pipeline as a new entry, so "2 tbsp peanut
+ * butter" arrives with real nutrition and its own unit options rather than
+ * needing the numbers typed by hand. It costs a lookup, like any new food, and
+ * is free when the food is already known.
+ */
+export async function addItemToEntry(
+  entryId: string,
+  text: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const raw = text.trim();
+  if (raw.length < 2) return { ok: false, error: "What would you like to add?" };
+
+  const entry = await prisma.entry.findFirst({
+    where: { id: entryId, userId: user.userId },
+    select: { id: true, eatenAt: true, restaurantName: true },
+  });
+  if (!entry) return { ok: false, error: "Meal not found." };
+
+  try {
+    const outcome = await resolveEntry(user.userId, user.timezone, raw, {
+      eatenAt: entry.eatenAt,
+      restaurantName: entry.restaurantName,
+    });
+
+    if (!outcome.isFood || outcome.items.length === 0) {
+      return { ok: false, error: "That doesn't look like food." };
+    }
+
+    await prisma.entryItem.createMany({
+      data: outcome.items.map((i) => ({
+        entryId: entry.id,
+        foodItemId: i.foodItemId,
+        name: i.name,
+        brand: i.brand,
+        quantity: i.quantity,
+        unit: i.unit,
+        grams: i.grams,
+        kcal: i.nutrition.kcal,
+        protein: i.nutrition.protein,
+        carbs: i.nutrition.carbs,
+        fat: i.nutrition.fat,
+        fiber: i.nutrition.fiber,
+        sugar: i.nutrition.sugar,
+        sodium: i.nutrition.sodium,
+        foodGroup: i.foodGroup as never,
+        processedLevel: i.processedLevel,
+        nutritionSource: i.nutritionSource as never,
+        confidence: i.confidence,
+        usdaFdcId: i.usdaFdcId,
+        unitOptions: i.unitOptions ?? [],
+      })),
+    });
+  } catch (error) {
+    if (error instanceof ParseLimitError) {
+      return { ok: false, error: error.message };
+    }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not add that.",
+    };
+  }
+
+  revalidatePath("/");
+  revalidatePath("/month");
+  revalidatePath("/insights");
+  return { ok: true };
+}
+
+/**
+ * Re-measure a saved item in a chosen unit.
+ *
+ * Takes an amount and a grams-per-unit rather than grams directly, so the UI can
+ * offer cups and tablespoons without doing the conversion itself and getting it
+ * subtly wrong.
+ */
+export async function updateItemAmount(
+  itemId: string,
+  amount: number,
+  unit: string,
+  gramsPerUnit: number,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, error: "Enter an amount above zero." };
+  }
+  if (!Number.isFinite(gramsPerUnit) || gramsPerUnit <= 0) {
+    return { ok: false, error: "That unit isn't usable for this food." };
+  }
+
+  const grams = amount * gramsPerUnit;
+  if (grams > 5000) return { ok: false, error: "That's over 5 kg — check the unit." };
+
+  const item = await prisma.entryItem.findFirst({
+    where: { id: itemId, entry: { userId: user.userId } },
+  });
+  if (!item) return { ok: false, error: "Item not found." };
+  if (item.grams <= 0) return { ok: false, error: "That item has no weight to scale." };
+
+  const f = grams / item.grams;
+
+  await prisma.entryItem.update({
+    where: { id: item.id },
+    data: {
+      quantity: amount,
+      unit: unit.trim().toLowerCase() || item.unit,
+      grams,
+      kcal: item.kcal * f,
+      protein: item.protein * f,
+      carbs: item.carbs * f,
+      fat: item.fat * f,
+      fiber: item.fiber === null ? null : item.fiber * f,
+      sugar: item.sugar === null ? null : item.sugar * f,
+      sodium: item.sodium === null ? null : item.sodium * f,
+      nutritionSource: "user",
+      confidence: 1,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/month");
   revalidatePath("/insights");
   return { ok: true };
 }

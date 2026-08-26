@@ -145,6 +145,8 @@ export interface DayItemView {
   processedLevel: number;
   nutritionSource: NutritionSource;
   confidence: number;
+  /** Food-specific measurement options, for the amount editor. */
+  unitOptions: unknown;
 }
 
 export interface DayEntryView {
@@ -205,6 +207,7 @@ export async function getDay(
       processedLevel: i.processedLevel,
       nutritionSource: i.nutritionSource as NutritionSource,
       confidence: i.confidence,
+      unitOptions: i.unitOptions,
     }));
 
     return {
