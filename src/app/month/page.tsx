@@ -1,10 +1,16 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getMonth, getProfile, targetsForProfile } from "@/lib/queries";
+import {
+  getMonth,
+  getMonthsWithData,
+  getProfile,
+  targetsForProfile,
+} from "@/lib/queries";
 import { addDays, monthBounds, todayIso, utcToIsoDate } from "@/lib/time";
 import { MonthHeatmap } from "./month-heatmap";
 import { FoodGroupChart } from "./food-groups";
 import { Tabs } from "../tabs";
+import { MonthPicker } from "./month-picker";
 
 export const dynamic = "force-dynamic";
 
@@ -30,18 +36,21 @@ export default async function MonthPage({ searchParams }: PageProps<"/month">) {
   const anchor = /^\d{4}-\d{2}-\d{2}$/.test(anchorParam ?? "") ? anchorParam! : today;
 
   const targets = targetsForProfile(profile);
-  const month = await getMonth(
-    user.userId,
-    anchor,
-    profile.timezone,
-    targets,
-    profile.bedtimeMinutes,
-    profile.goal,
-    profile.eatingWindowEnabled
-      ? { start: profile.eatingWindowStart, end: profile.eatingWindowEnd }
-      : null,
-    today,
-  );
+  const [month, months] = await Promise.all([
+    getMonth(
+      user.userId,
+      anchor,
+      profile.timezone,
+      targets,
+      profile.bedtimeMinutes,
+      profile.goal,
+      profile.eatingWindowEnabled
+        ? { start: profile.eatingWindowStart, end: profile.eatingWindowEnd }
+        : null,
+      today,
+    ),
+    getMonthsWithData(user.userId),
+  ]);
 
   const { start, end } = monthBounds(anchor);
   const prev = addDays(utcToIsoDate(start), -1);
@@ -70,7 +79,8 @@ export default async function MonthPage({ searchParams }: PageProps<"/month">) {
             {s.todayExcluded && " · today not counted yet"}
           </p>
         </div>
-        <nav className="flex gap-1.5 text-sm">
+        <nav className="flex items-center gap-1.5 text-sm">
+          <MonthPicker months={months} current={utcToIsoDate(start)} />
           <Link
             href={`/month?m=${prev}`}
             aria-label="Previous month"
@@ -111,7 +121,13 @@ export default async function MonthPage({ searchParams }: PageProps<"/month">) {
         <Tile
           label="On target"
           value={String(s.daysOnTarget)}
-          sub="within 10%"
+          sub={
+            profile.goal === "lose"
+              ? "at or under"
+              : profile.goal === "gain"
+                ? "at or over"
+                : "within 10%"
+          }
         />
       </section>
 

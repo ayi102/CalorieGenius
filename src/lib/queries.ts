@@ -1187,3 +1187,34 @@ export async function getKnownFacts(
     },
   };
 }
+
+/**
+ * Every month this user has logged anything in, newest first.
+ *
+ * Grouped in SQL rather than by scanning entries, because this runs on every
+ * month view and a year of logging is thousands of rows. `date_trunc` on the
+ * stored localDate keeps the grouping in the user's own calendar, so a late-night
+ * meal never lands in the wrong month.
+ */
+export async function getMonthsWithData(
+  userId: string,
+): Promise<{ month: IsoDate; label: string; days: number }[]> {
+  const rows = await prisma.$queryRaw<{ month: Date; days: bigint }[]>`
+    SELECT date_trunc('month', "localDate")::date AS month,
+           count(DISTINCT "localDate") AS days
+    FROM "Entry"
+    WHERE "userId" = ${userId}
+    GROUP BY 1
+    ORDER BY 1 DESC
+  `;
+
+  return rows.map((r) => ({
+    month: utcToIsoDate(r.month),
+    label: new Date(r.month).toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }),
+    days: Number(r.days),
+  }));
+}
